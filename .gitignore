@@ -19,3 +19,7 @@ compile_commands.json
 
 # OS
 .DS_Store
+
+# Personal/local Claude Code notes — pointers into the maintainer's private
+# design-notes system, not meant to be published. See CLAUDE.md.
+.claude/CLAUDE.local.md
