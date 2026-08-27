@@ -251,7 +251,7 @@ installed, `Ctrl+Shift+V` works normally between host and the
 
 ```bash
 rsync -av --delete tiers/ omarchy-kids-child:~/omarchy-kids-tiers/
-ssh omarchy-kids-child "chmod +x ~/omarchy-kids-tiers/omarchy-kids-set-tier && ~/omarchy-kids-tiers/omarchy-kids-set-tier 5-7"
+ssh omarchy-kids-child "chmod +x ~/omarchy-kids-tiers/omarchy-kids-set-tier && ~/omarchy-kids-tiers/omarchy-kids-set-tier mini"
 
 # Visual check without touching the VM's own input:
 sudo virsh screenshot omarchy-kids-child /tmp/check.png

@@ -1,6 +1,6 @@
--- Omarchy Kids: Tier 5-7 (kiosk). Installed by omarchy-kids-set-tier as a
+-- Omarchy Kids: Tier mini (5-7, kiosk). Installed by omarchy-kids-set-tier as a
 -- full replacement for ~/.config/hypr/hyprland.lua — edit
--- tiers/5-7/hypr/hyprland.lua in the omarchy-kids repo, not this file
+-- tiers/mini/hypr/hyprland.lua in the omarchy-kids repo, not this file
 -- directly. The original is backed up as hyprland.lua.pre-omarchy-kids.
 
 dofile((os.getenv("OMARCHY_PATH") or "/usr/share/omarchy") .. "/default/hypr/bootstrap.lua")

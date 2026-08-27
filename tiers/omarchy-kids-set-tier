@@ -2,14 +2,14 @@
 # Switches the active Omarchy Kids age tier.
 #
 # Usage: omarchy-kids-set-tier <tier>
-# Example: omarchy-kids-set-tier 5-7
+# Example: omarchy-kids-set-tier mini
 #
 # Installs tiers/<tier>/theme/ as an Omarchy theme and activates it, and
 # (tier-dependent) installs the tier's Quickshell launcher plugin, replaces
 # ~/.config/hypr/hyprland.lua with the tier's locked-down kiosk bindings,
 # and masks unused VTs so Ctrl+Alt+F<n> can't reach a raw login shell.
 #
-# Only tier 5-7 is implemented so far — see tiers/5-7/.
+# Only tier "mini" (age 5-7) is implemented so far — see tiers/mini/.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -85,7 +85,7 @@ fi
 # — the kiosk restriction is a UI-layer thing otherwise, not an access
 # control. Mask the gettys for the unused VTs; VT1 (the graphical session)
 # stays untouched.
-if [[ $TIER == "5-7" ]]; then
+if [[ $TIER == "mini" ]]; then
   sudo systemctl mask --now getty@tty2.service getty@tty3.service getty@tty4.service getty@tty5.service getty@tty6.service >/dev/null 2>&1 || true
 fi
 

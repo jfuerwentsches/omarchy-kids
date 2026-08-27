@@ -4,7 +4,7 @@
   "name": "Omarchy Kids Launcher",
   "version": "0.1.0",
   "author": "Omarchy Kids",
-  "description": "Fullscreen kiosk icon grid for the 5-7 age tier — replaces the normal Omarchy menu",
+  "description": "Fullscreen kiosk icon grid for the mini age tier (5-7) — replaces the normal Omarchy menu",
   "kinds": [
     "overlay"
   ],

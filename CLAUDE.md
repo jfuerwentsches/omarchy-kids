@@ -30,29 +30,32 @@ For orientation, the private notes are organized around these topics (contributo
 
 ## Current focus
 
-**Only tier 5-7 is being built right now** — explicitly deprioritized the
-other tiers (8-10, 11-13, 14-16) until 5-7 is solid. Don't start scaffolding
-other tiers unless asked.
+**Only tier "mini" (age 5-7) is being built right now** — explicitly
+deprioritized the other tiers (midi/8-10, maxi/11-13, teen/14-16) until mini
+is solid. Don't start scaffolding other tiers unless asked.
 
 ## Status (as of the last session)
 
 - Monorepo scaffold in place: `agent/` (Rust workspace, builds), `control/`
   (CMake/Qt6, builds), `tiers/`, `quickshell-plugin/`, `setup-wizard/`,
   `docs/` — see each folder's README for stack/status.
-- `tiers/5-7/` is a working end-to-end kiosk, verified in the dev VM:
+- `tiers/mini/` is a working end-to-end kiosk, verified in the dev VM:
   - `theme/` — "Sternenreise" (own space artwork, not a licensed franchise)
   - `launcher/omarchy-kids.launcher/` — fullscreen Quickshell overlay plugin,
-    icon-only grid (GCompris, Tux Paint, Blinken), launches via `gtk-launch`
+    icon-only grid, launches via `gtk-launch`. App line-up is being
+    reworked (see the Altersstufe-5-7 vault note): GCompris is being forked
+    as `omarkid-gcompris` for theming, KTuberling stays as-is, Tux
+    Paint/Klettres/Blinken were dropped entirely — `apps.json` in this repo
+    still reflects the old line-up until that lands.
   - `hypr/hyprland.lua` — full Hyprland config replacement: every default
     binding off, only `SUPER+SPACE` survives (→ the kiosk launcher)
   - `omarchy-kids-set-tier` — applies all of the above, plus masks
     `getty@tty2-6` (VT-switch lockdown) for this tier
 - `agent/`, `control/`, `quickshell-plugin/`, `setup-wizard/` are stubs/skeletons only — no real logic yet.
-- Not yet done: app installation as part of the package (GCompris/Tux
-  Paint/Blinken are manually installed in the dev VM right now — Tux Paint
-  is AUR-only, see the packaging note in the Altersstufe-5-7 vault note),
-  app-wrapper/time-tracking integration, real SSH pairing/agent, locale
-  implementation (concept is written, not built).
+- Not yet done: app installation as part of the package (nothing in the
+  current line-up is installed by the package yet), the `omarkid-gcompris`
+  fork itself, app-wrapper/time-tracking integration, real SSH
+  pairing/agent, locale implementation (concept is written, not built).
 
 ## Dev environment
 
@@ -87,7 +90,7 @@ other tiers unless asked.
 - **Kiosk lockdown is a UI-layer thing only, unless you also close the OS
   escape hatches.** Hiding apps from the launcher doesn't stop a VT switch
   (`Ctrl+Alt+F2`) to a raw login shell on the same account. Hence the
-  getty-masking in `omarchy-kids-set-tier` for 5-7.
+  getty-masking in `omarchy-kids-set-tier` for the mini tier.
 - **Franchise-themed content (Paw Patrol, Peppa Pig, Bluey, ...) is
   deliberately out of scope for now** — own generic themes only; see
   `Omarchy Kids - Themes` for the licensing reasoning and the later plan to

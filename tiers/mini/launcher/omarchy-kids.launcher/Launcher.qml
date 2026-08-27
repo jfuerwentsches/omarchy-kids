@@ -5,9 +5,9 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 
-// Fullscreen kiosk icon grid for the 5-7 age tier. Replaces the normal
+// Fullscreen kiosk icon grid for the mini age tier (5-7). Replaces the normal
 // Omarchy menu (SUPER + SPACE) for this tier — see
-// tiers/5-7/hypr/hyprland.lua. No search box, no text dependency: a
+// tiers/mini/hypr/hyprland.lua. No search box, no text dependency: a
 // pre-reader picks an app by its icon/color alone.
 Item {
   id: root
