@@ -21,6 +21,7 @@ See `docs/` for the architecture write-up once it lands (ported from the project
 | `quickshell-plugin/` | QML | Parent-side headerbar plugin: online/offline status, opens the control center. |
 | `setup-wizard/` | — | One-time first-boot setup on the child computer (name, initial tier, pairing). |
 | `docs/` | — | Architecture docs, roadmap. |
+| `website/` | HTML/CSS | Landing page for omarchy-kids.com (English + German). |
 
 ## License
 
