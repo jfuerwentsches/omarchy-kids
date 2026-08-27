@@ -233,6 +233,34 @@ a {
   margin: 0;
 }
 
+/* legal pages (e.g. Impressum) */
+
+.main--legal {
+  text-align: left;
+}
+
+.main--legal h1 {
+  color: var(--color-white);
+  font-size: 1.3em;
+  margin: 0 0 var(--space-medium);
+}
+
+.main--legal h2 {
+  color: var(--color-cyan);
+  font-size: 0.95em;
+  letter-spacing: 0.03em;
+  margin: var(--space-large) 0 0.5em;
+  text-transform: uppercase;
+}
+
+.main--legal p,
+.main--legal address {
+  color: rgb(192 202 245 / 0.85);
+  font-style: normal;
+  line-height: 1.7;
+  margin: 0 0 0.6em;
+}
+
 /* footer */
 
 .footer {
