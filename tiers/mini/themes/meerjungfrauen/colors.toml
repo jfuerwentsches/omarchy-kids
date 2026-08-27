@@ -1,0 +1,34 @@
+# Omarchy Kids — tier mini (5-7) ("Meerjungfrauen" / mermaid theme)
+# Own, generic underwater artwork — not affiliated with or based on any
+# licensed children's franchise. See docs/themes for the rationale.
+mode = "dark"
+
+accent = "#FF7AA8"
+selection = "#FFFFFF"
+muted = "#7FB8B0"
+
+background = "#04262E"
+dark_background = "#021A20"
+darker_background = "#01100F"
+lighter_background = "#0C3B44"
+
+foreground = "#FFFFFF"
+dark_foreground = "#C9EEE9"
+light_foreground = "#FFFFFF"
+bright_foreground = "#FFFFFF"
+
+red = "#FF5D6C"
+yellow = "#FFD97D"
+orange = "#FFA96B"
+green = "#4AE0A0"
+cyan = "#2DD4E8"
+blue = "#3FA9F5"
+magenta = "#FF7AA8"
+brown = "#B98A5E"
+
+bright_red = "#FF8FA0"
+bright_yellow = "#FFED9E"
+bright_green = "#8CF6C8"
+bright_cyan = "#8FEFFF"
+bright_blue = "#8FC8FF"
+bright_magenta = "#FFA9C9"

@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0C3B44"/>
+      <stop offset="55%" stop-color="#04262E"/>
+      <stop offset="100%" stop-color="#01100F"/>
+    </linearGradient>
+    <radialGradient id="sunGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFD97D" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#FFD97D" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#sea)"/>
+
+  <!-- sunlight from the surface -->
+  <circle cx="1600" cy="200" r="260" fill="url(#sunGlow)"/>
+  <circle cx="1600" cy="200" r="90" fill="#FFED9E" opacity="0.55"/>
+  <circle cx="1600" cy="200" r="130" fill="none" stroke="#FFED9E" stroke-width="3" opacity="0.2"/>
+  <circle cx="1600" cy="200" r="170" fill="none" stroke="#FFED9E" stroke-width="3" opacity="0.12"/>
+
+  <!-- coral reef seabed -->
+  <path d="M0,1080 L0,940 Q320,860 640,920 T1280,900 T1920,940 L1920,1080 Z" fill="#01100F"/>
+  <g fill="#FF7AA8">
+    <path d="M120,940 C110,900 140,880 150,940 Z"/>
+    <path d="M170,935 C165,905 190,895 195,935 Z"/>
+    <path d="M1500,930 C1490,890 1520,875 1530,930 Z"/>
+  </g>
+  <g fill="#FFA96B">
+    <path d="M1550,935 C1545,905 1570,895 1575,935 Z"/>
+    <path d="M90,935 C85,910 105,902 110,935 Z"/>
+  </g>
+
+  <!-- rising bubbles -->
+  <g fill="#FFFFFF" opacity="0.85">
+    <circle cx="120" cy="120" r="5"/>
+    <circle cx="260" cy="260" r="3"/>
+    <circle cx="400" cy="90" r="6"/>
+    <circle cx="520" cy="220" r="3"/>
+    <circle cx="700" cy="140" r="5"/>
+    <circle cx="300" cy="480" r="4"/>
+    <circle cx="960" cy="200" r="6"/>
+    <circle cx="1080" cy="100" r="3"/>
+    <circle cx="1220" cy="600" r="5"/>
+    <circle cx="1350" cy="70" r="3"/>
+    <circle cx="180" cy="400" r="4"/>
+    <circle cx="60" cy="300" r="5"/>
+    <circle cx="1150" cy="380" r="4"/>
+    <circle cx="1450" cy="700" r="4"/>
+  </g>
+
+  <!-- shimmering caustic sparkles -->
+  <g fill="#8FEFFF">
+    <path d="M300,150 L312,180 L342,192 L312,204 L300,234 L288,204 L258,192 L288,180 Z"/>
+    <path d="M170,600 L179,622 L201,631 L179,640 L170,662 L161,640 L139,631 L161,622 Z"/>
+  </g>
+  <g fill="#FFD97D">
+    <path d="M980,470 L989,492 L1011,501 L989,510 L980,532 L971,510 L949,501 L971,492 Z"/>
+  </g>
+
+  <!-- little fish -->
+  <g transform="translate(260,760)">
+    <path d="M0,0 C-30,-16 -30,16 0,0 Z" fill="#FF7AA8"/>
+    <ellipse cx="20" cy="0" rx="26" ry="16" fill="#2DD4E8"/>
+    <circle cx="30" cy="-4" r="2.5" fill="#01100F"/>
+  </g>
+  <g transform="translate(1700,650) scale(-1,1)">
+    <path d="M0,0 C-24,-13 -24,13 0,0 Z" fill="#FFA96B"/>
+    <ellipse cx="16" cy="0" rx="20" ry="13" fill="#4AE0A0"/>
+    <circle cx="24" cy="-3" r="2" fill="#01100F"/>
+  </g>
+
+  <!-- jellyfish -->
+  <g transform="translate(1740,440)">
+    <path d="M-30,0 A30,26 0 0 1 30,0 Z" fill="#FFA9C9" opacity="0.85"/>
+    <path d="M-20,2 C-24,30 -16,40 -20,58 M-6,2 C-10,34 -2,42 -6,64 M8,2 C4,34 12,42 8,64 M22,2 C18,30 26,40 22,58" stroke="#FFA9C9" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.7"/>
+  </g>
+
+  <!-- friendly mermaid -->
+  <g transform="translate(860,680) rotate(-6)">
+    <!-- flowing hair -->
+    <path d="M-10,-205 C-70,-200 -128,-160 -122,-95 C-118,-140 -90,-175 -40,-185 C-80,-155 -96,-110 -70,-55 C-104,-90 -140,-140 -110,-190 C-85,-215 -45,-218 -10,-205 Z" fill="#7A3FA0"/>
+    <path d="M10,-205 C70,-200 128,-160 122,-95 C118,-140 90,-175 40,-185 C80,-155 96,-110 70,-55 C104,-90 140,-140 110,-190 C85,-215 45,-218 10,-205 Z" fill="#7A3FA0"/>
+    <!-- arm wave -->
+    <path d="M-34,-118 C-78,-118 -108,-90 -104,-50 C-88,-78 -62,-98 -30,-102 Z" fill="#FFD9B3"/>
+    <!-- head -->
+    <circle cx="0" cy="-165" r="40" fill="#FFD9B3"/>
+    <!-- torso -->
+    <path d="M-36,-124 C-44,-84 -44,-42 -28,-2 L28,-2 C44,-42 44,-84 36,-124 C20,-138 -20,-138 -36,-124 Z" fill="#FFD9B3"/>
+    <!-- shell top -->
+    <path d="M-20,-88 C-20,-98 -9,-102 0,-94 C9,-102 20,-98 20,-88 C13,-82 6,-86 0,-82 C-6,-86 -13,-82 -20,-88 Z" fill="#FF7AA8"/>
+    <!-- upper tail -->
+    <path d="M-28,-4 C-48,34 -48,74 -24,104 L24,104 C48,74 48,34 28,-4 Z" fill="#2DD4C0"/>
+    <!-- tail fin flukes -->
+    <path d="M-24,96 C-46,124 -56,154 -30,180 C-15,160 -6,146 0,132 C6,146 15,160 30,180 C56,154 46,124 24,96 Z" fill="#FF7AA8"/>
+    <!-- scale shine -->
+    <path d="M-28,-4 C-48,34 -48,74 -24,104 L-8,104 C-24,74 -24,34 -10,-4 Z" fill="#FFFFFF" opacity="0.12"/>
+  </g>
+</svg>

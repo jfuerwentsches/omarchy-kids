@@ -1,11 +1,15 @@
 #!/bin/bash
 # Switches the active Omarchy Kids age tier.
 #
-# Usage: omarchy-kids-set-tier <tier>
+# Usage: omarchy-kids-set-tier <tier> [theme]
 # Example: omarchy-kids-set-tier mini
+#          omarchy-kids-set-tier mini meerjungfrauen
 #
-# Installs tiers/<tier>/theme/ as an Omarchy theme and activates it, and
-# (tier-dependent) installs the tier's Quickshell launcher plugin, replaces
+# Installs every theme under tiers/<tier>/themes/ (plus any dropped into
+# ~/.config/omarchy-kids/themes/<tier>/ — same shape, no code change needed
+# to add one) as an Omarchy theme, and activates either the explicit
+# [theme] argument or the tier's default-theme.txt. Also (tier-dependent)
+# installs the tier's Quickshell launcher plugin, replaces
 # ~/.config/hypr/hyprland.lua with the tier's locked-down kiosk bindings,
 # and masks unused VTs so Ctrl+Alt+F<n> can't reach a raw login shell.
 #
@@ -14,11 +18,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TIER="${1:-}"
+THEME_ID_ARG="${2:-}"
 
 if [[ -z $TIER ]]; then
-  echo "Usage: omarchy-kids-set-tier <tier>" >&2
+  echo "Usage: omarchy-kids-set-tier <tier> [theme]" >&2
   echo "Available tiers:" >&2
-  for dir in "$SCRIPT_DIR"/*/theme; do
+  for dir in "$SCRIPT_DIR"/*/themes; do
     [[ -d $dir ]] || continue
     basename "$(dirname "$dir")" >&2
   done
@@ -26,18 +31,45 @@ if [[ -z $TIER ]]; then
 fi
 
 TIER_DIR="$SCRIPT_DIR/$TIER"
-TIER_THEME_SRC="$TIER_DIR/theme"
-if [[ ! -d $TIER_THEME_SRC ]]; then
-  echo "Unknown tier '$TIER' (no theme at $TIER_THEME_SRC)" >&2
+TIER_THEMES_SRC="$TIER_DIR/themes"
+if [[ ! -d $TIER_THEMES_SRC ]]; then
+  echo "Unknown tier '$TIER' (no themes at $TIER_THEMES_SRC)" >&2
   exit 1
 fi
 
-THEME_NAME="omarchy-kids-$TIER"
-THEME_DEST="$HOME/.config/omarchy/themes/$THEME_NAME"
+if [[ -n $THEME_ID_ARG ]]; then
+  DEFAULT_THEME_ID="$THEME_ID_ARG"
+elif [[ -f "$TIER_THEMES_SRC/default-theme.txt" ]]; then
+  DEFAULT_THEME_ID="$(<"$TIER_THEMES_SRC/default-theme.txt")"
+else
+  echo "No [theme] given and no default-theme.txt under $TIER_THEMES_SRC" >&2
+  exit 1
+fi
 
 mkdir -p "$HOME/.config/omarchy/themes"
-rm -rf "$THEME_DEST"
-cp -r "$TIER_THEME_SRC" "$THEME_DEST"
+
+# Install every theme this tier ships, plus any the parent has dropped into
+# ~/.config/omarchy-kids/themes/<tier>/ (same directory shape — a theme is
+# just a folder with a colors.toml, no code change needed to add one). Each
+# becomes its own installed Omarchy theme (omarchy-kids-<tier>-<theme-id>),
+# so switching between them afterwards is just the normal
+# omarchy-theme-set mechanism.
+USER_THEMES_SRC="$HOME/.config/omarchy-kids/themes/$TIER"
+for themes_src in "$TIER_THEMES_SRC" "$USER_THEMES_SRC"; do
+  [[ -d $themes_src ]] || continue
+  for theme_dir in "$themes_src"/*/; do
+    [[ -f "${theme_dir}colors.toml" ]] || continue
+    theme_id="$(basename "$theme_dir")"
+    rm -rf "$HOME/.config/omarchy/themes/omarchy-kids-$TIER-$theme_id"
+    cp -r "$theme_dir" "$HOME/.config/omarchy/themes/omarchy-kids-$TIER-$theme_id"
+  done
+done
+
+THEME_NAME="omarchy-kids-$TIER-$DEFAULT_THEME_ID"
+if [[ ! -d "$HOME/.config/omarchy/themes/$THEME_NAME" ]]; then
+  echo "Theme '$DEFAULT_THEME_ID' for tier '$TIER' not found under $TIER_THEMES_SRC or $USER_THEMES_SRC" >&2
+  exit 1
+fi
 
 omarchy-theme-set "$THEME_NAME"
 

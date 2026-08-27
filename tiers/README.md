@@ -2,13 +2,13 @@
 
 Age-tier config layer. Each tier is a config profile swapping Hyprland config, Quickshell modules (launcher, status bar), and a theme (see `omarchy-kids-themes` design note) — wallpaper, colors, scaling.
 
-Entry point: `omarchy-kids-set-tier <tier>` (e.g. `omarchy-kids-set-tier mini`). Installs `<tier>/theme/` as an Omarchy theme (`~/.config/omarchy/themes/omarchy-kids-<tier>`) and activates it via `omarchy-theme-set`.
+Entry point: `omarchy-kids-set-tier <tier> [theme]`. Installs *every* theme under `<tier>/themes/` (plus any dropped into `~/.config/omarchy-kids/themes/<tier>/` — same directory shape, no code change needed to add one) as an Omarchy theme (`~/.config/omarchy/themes/omarchy-kids-<tier>-<theme-id>`), then activates either the given `[theme]` or the tier's `themes/default-theme.txt` via `omarchy-theme-set`. A tier can ship more than one theme; switching between already-installed ones afterwards is just the normal Omarchy theme mechanism.
 
 ## Status
 
 Tier **mini** (age 5-7) is a working end-to-end kiosk, verified in the dev VM:
 
-- `mini/theme/`: "Sternenreise" — original space artwork, not tied to any licensed franchise. High-contrast palette, larger UI scale/font for small hands and pre-readers.
+- `mini/themes/`: two themes so far — `sternenreise` (default; original space artwork) and `meerjungfrauen` (underwater/mermaid artwork). Both own, generic artwork, not tied to any licensed franchise. High-contrast palette, larger UI scale/font for small hands and pre-readers.
 - `mini/launcher/`: `omarchy-kids.launcher`, a Quickshell overlay plugin — fullscreen icon grid, no text/reading required to use it. `apps.json` currently lists GCompris (to be replaced by the `omarkid-gcompris` fork) and KTuberling — see the Altersstufe-5-7 concept doc for the current app line-up and why Tux Paint/Klettres/Blinken were dropped.
 - `mini/hypr/hyprland.lua`: full replacement of the user's Hyprland config. Disables every default Omarchy binding (`omarchy_default_bindings = false`, `omarchy_preinstalled_bindings = false` — no terminal, no file manager, no webapp shortcuts, no tiling/workspace binds) and rebinds only `SUPER + SPACE` to the kiosk launcher, so the "SUPER opens app access" gesture survives into later tiers unchanged. `omarchy-kids-set-tier` backs up the original as `hyprland.lua.pre-omarchy-kids` before overwriting.
 - `omarchy-kids-set-tier` also masks `getty@tty2-6` for tier mini, so `Ctrl+Alt+F<n>` can't reach a raw login shell for the same account — the kiosk restriction is otherwise only a UI-layer thing (Quickshell config), not an access control, since nothing about it restricts the account itself.

@@ -40,7 +40,13 @@ is solid. Don't start scaffolding other tiers unless asked.
   (CMake/Qt6, builds), `tiers/`, `quickshell-plugin/`, `setup-wizard/`,
   `docs/` — see each folder's README for stack/status.
 - `tiers/mini/` is a working end-to-end kiosk, verified in the dev VM:
-  - `theme/` — "Sternenreise" (own space artwork, not a licensed franchise)
+  - `themes/` — a tier can ship multiple themes now (own artwork, no
+    licensed franchises): `sternenreise` (default, space) and
+    `meerjungfrauen` (underwater/mermaid). `omarchy-kids-set-tier <tier>
+    [theme]` installs all of a tier's themes plus any dropped into
+    `~/.config/omarchy-kids/themes/<tier>/` (same folder shape, no code
+    change needed), and activates the given theme or
+    `themes/default-theme.txt`.
   - `launcher/omarchy-kids.launcher/` — fullscreen Quickshell overlay plugin,
     icon-only grid, launches via `gtk-launch`. App line-up is being
     reworked (see the Altersstufe-5-7 vault note): GCompris is being forked
