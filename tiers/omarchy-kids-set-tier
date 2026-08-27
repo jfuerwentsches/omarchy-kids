@@ -1,0 +1,41 @@
+#!/bin/bash
+# Switches the active Omarchy Kids age tier: installs tiers/<tier>/theme/
+# as an Omarchy theme and activates it via omarchy-theme-set.
+#
+# Usage: omarchy-kids-set-tier <tier>
+# Example: omarchy-kids-set-tier 5-7
+#
+# This is an early skeleton: it wires up the theme swap end to end. The
+# Hyprland config swap and the per-tier Quickshell launcher module (see
+# docs) are not implemented yet.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TIER="${1:-}"
+
+if [[ -z $TIER ]]; then
+  echo "Usage: omarchy-kids-set-tier <tier>" >&2
+  echo "Available tiers:" >&2
+  for dir in "$SCRIPT_DIR"/*/theme; do
+    [[ -d $dir ]] || continue
+    basename "$(dirname "$dir")" >&2
+  done
+  exit 1
+fi
+
+TIER_THEME_SRC="$SCRIPT_DIR/$TIER/theme"
+if [[ ! -d $TIER_THEME_SRC ]]; then
+  echo "Unknown tier '$TIER' (no theme at $TIER_THEME_SRC)" >&2
+  exit 1
+fi
+
+THEME_NAME="omarchy-kids-$TIER"
+THEME_DEST="$HOME/.config/omarchy/themes/$THEME_NAME"
+
+mkdir -p "$HOME/.config/omarchy/themes"
+rm -rf "$THEME_DEST"
+cp -r "$TIER_THEME_SRC" "$THEME_DEST"
+
+omarchy-theme-set "$THEME_NAME"
+
+echo "Omarchy Kids tier set to '$TIER' (theme: $THEME_NAME)"

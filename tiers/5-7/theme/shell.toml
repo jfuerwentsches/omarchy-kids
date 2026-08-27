@@ -1,0 +1,132 @@
+# Omarchy Kids — tier 5-7 shell surfaces.
+# Bigger, bolder, higher-contrast than the Omarchy default: this tier is
+# read by a child who can't read yet, so everything leans on color, size,
+# and icons rather than text.
+
+[bar]
+background       = "#0B1026"
+background-alpha = 1.0
+text             = "#FFFFFF"
+active           = "#FFC93C"
+scale-with-font  = true
+size-horizontal  = 36
+size-vertical    = 36
+
+[hyprland]
+active-border            = "rgba(ffc93cee)"
+active-border-foreground = "rgba(ffc93cee)"
+
+[controls]
+normal-color        = "#FFFFFF"
+normal-fill-alpha   = 0.08
+normal-border       = "#FFFFFF"
+normal-border-width = 2
+normal-border-alpha = 0.4
+
+hover-cursor-color        = "#FFC93C"
+hover-cursor-fill-alpha   = 0.2
+hover-cursor-border       = "#FFC93C"
+hover-cursor-border-width = 2
+hover-cursor-border-alpha = 0.7
+
+focus-color        = "#FFC93C"
+focus-fill-alpha   = 0.2
+focus-border       = "#FFC93C"
+focus-border-width = 2
+focus-border-alpha = 0.7
+
+selected-color        = "#FFC93C"
+selected-fill-alpha   = 0.32
+selected-border       = "#FFC93C"
+selected-border-width = 0
+selected-border-alpha = 1.0
+
+pressed-fill-alpha   = 0.26
+selection-fill-alpha = 0.4
+
+[spacing]
+# Scaled up well beyond the default: bigger click targets for small hands.
+scale           = 1.6
+scale-with-font = true
+
+[font]
+# Bigger base size — the child can't read yet, but bigger UI text still
+# means bigger everything else that derives from it.
+base-size = 18
+
+[popups]
+background       = "#171C3D"
+background-alpha = 1.0
+text             = "#FFFFFF"
+border           = "hyprland.active-border"
+border-alpha     = 1.0
+
+[notifications]
+background       = "#171C3D"
+background-alpha = 1.0
+text             = "#FFFFFF"
+border           = "hyprland.active-border"
+border-alpha     = 1.0
+countdown        = "#FFC93C"
+
+[launcher]
+background                = "#171C3D"
+background-alpha          = 0.98
+text                      = "#FFFFFF"
+border                    = "hyprland.active-border-foreground"
+border-alpha              = 1.0
+scrim                     = "#040610"
+scrim-alpha               = 0.6
+selected-background       = "#FFC93C"
+selected-background-alpha = 1.0
+selected-text              = "#0B1026"
+selected-border            = "#FFC93C"
+selected-border-alpha      = 1.0
+
+[menu]
+background                = "#171C3D"
+background-alpha          = 1.0
+text                      = "#FFFFFF"
+border                    = "hyprland.active-border-foreground"
+border-alpha              = 1.0
+scrim                     = "#040610"
+scrim-alpha               = 0.6
+selected-background       = "#FFC93C"
+selected-background-alpha = 1.0
+selected-text              = "#0B1026"
+selected-border            = "#FFC93C"
+selected-border-alpha      = 1.0
+
+[polkit]
+background       = "#171C3D"
+background-alpha = 1.0
+text             = "#FFFFFF"
+text-error       = "#FF5D5D"
+border           = "hyprland.active-border"
+border-error     = "#FF5D5D"
+border-alpha     = 1.0
+scrim            = "#040610"
+scrim-alpha      = 0.6
+accent           = "#FFC93C"
+
+[lock]
+background       = "#171C3D"
+background-alpha = 0.95
+text             = "#FFFFFF"
+placeholder      = "#8A93B8"
+text-error       = "#FF5D5D"
+border           = "hyprland.active-border"
+border-active    = "hyprland.active-border"
+border-error     = "#FF5D5D"
+border-alpha     = 1.0
+selection        = "#FFC93C"
+selection-alpha  = 0.5
+
+[image-picker]
+scrim                   = "#040610"
+scrim-alpha             = 0.6
+text                    = "#FFFFFF"
+selected-border         = "#FFC93C"
+selected-border-alpha   = 1.0
+unselected-border       = "#FFFFFF"
+unselected-border-alpha = 0.3

@@ -1,0 +1,34 @@
+# Omarchy Kids — tier 5-7 ("Sternenreise" / star-journey theme)
+# Own, generic artwork — not affiliated with or based on any licensed
+# children's franchise. See docs/themes for the rationale.
+mode = "dark"
+
+accent = "#FFC93C"
+selection = "#FFFFFF"
+muted = "#8A93B8"
+
+background = "#0B1026"
+dark_background = "#070A1A"
+darker_background = "#040610"
+lighter_background = "#171C3D"
+
+foreground = "#FFFFFF"
+dark_foreground = "#C7CCE8"
+light_foreground = "#FFFFFF"
+bright_foreground = "#FFFFFF"
+
+red = "#FF5D5D"
+yellow = "#FFD93D"
+orange = "#FF9F43"
+green = "#4ADE80"
+cyan = "#38BDF8"
+blue = "#5B8DEF"
+magenta = "#FF6FB5"
+brown = "#C68B59"
+
+bright_red = "#FF8080"
+bright_yellow = "#FFE97D"
+bright_green = "#7CF5A8"
+bright_cyan = "#7DD8FF"
+bright_blue = "#87ADFF"
+bright_magenta = "#FF9BCE"

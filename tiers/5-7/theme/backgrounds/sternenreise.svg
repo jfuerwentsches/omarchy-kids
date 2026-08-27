@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#171C3D"/>
+      <stop offset="55%" stop-color="#0B1026"/>
+      <stop offset="100%" stop-color="#040610"/>
+    </linearGradient>
+    <radialGradient id="moonGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFD93D" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#FFD93D" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#sky)"/>
+
+  <!-- distant hills -->
+  <path d="M0,1080 L0,920 Q320,830 640,900 T1280,880 T1920,920 L1920,1080 Z" fill="#040610"/>
+
+  <!-- moon glow + friendly crescent moon -->
+  <circle cx="1600" cy="220" r="220" fill="url(#moonGlow)"/>
+  <circle cx="1600" cy="220" r="110" fill="#FFE97D"/>
+  <circle cx="1650" cy="185" r="95" fill="#171C3D"/>
+  <circle cx="1560" cy="195" r="8" fill="#FFC93C"/>
+  <circle cx="1600" cy="250" r="10" fill="#FFC93C"/>
+  <circle cx="1545" cy="240" r="5" fill="#FFC93C"/>
+
+  <!-- stars -->
+  <g fill="#FFFFFF">
+    <circle cx="120" cy="120" r="4"/>
+    <circle cx="260" cy="260" r="3"/>
+    <circle cx="400" cy="90" r="5"/>
+    <circle cx="520" cy="220" r="3"/>
+    <circle cx="700" cy="140" r="4"/>
+    <circle cx="830" cy="60" r="3"/>
+    <circle cx="960" cy="200" r="5"/>
+    <circle cx="1080" cy="100" r="3"/>
+    <circle cx="1220" cy="160" r="4"/>
+    <circle cx="1350" cy="70" r="3"/>
+    <circle cx="180" cy="400" r="3"/>
+    <circle cx="60" cy="300" r="4"/>
+    <circle cx="900" cy="330" r="3"/>
+    <circle cx="1050" cy="380" r="4"/>
+  </g>
+
+  <!-- a few bigger four-point sparkle stars -->
+  <g fill="#FFD93D">
+    <path d="M300,150 L312,180 L342,192 L312,204 L300,234 L288,204 L258,192 L288,180 Z"/>
+    <path d="M980,470 L989,492 L1011,501 L989,510 L980,532 L971,510 L949,501 L971,492 Z"/>
+    <path d="M170,600 L179,622 L201,631 L179,640 L170,662 L161,640 L139,631 L161,622 Z"/>
+  </g>
+  <g fill="#FF6FB5">
+    <path d="M700,520 L707,538 L725,545 L707,552 L700,570 L693,552 L675,545 L693,538 Z"/>
+  </g>
+
+  <!-- small planets -->
+  <circle cx="230" cy="820" r="46" fill="#5B8DEF"/>
+  <ellipse cx="230" cy="820" rx="76" ry="16" fill="none" stroke="#7DD8FF" stroke-width="6" opacity="0.8"/>
+  <circle cx="1750" cy="760" r="30" fill="#4ADE80"/>
+
+  <!-- friendly rocket -->
+  <g transform="translate(880,700) rotate(-18)">
+    <path d="M0,-150 C60,-90 60,40 0,110 C-60,40 -60,-90 0,-150 Z" fill="#FF5D5D"/>
+    <path d="M0,-150 C60,-90 60,40 0,110 C-60,40 -60,-90 0,-150 Z" fill="#FFFFFF" opacity="0.06"/>
+    <circle cx="0" cy="-30" r="42" fill="#171C3D"/>
+    <circle cx="0" cy="-30" r="30" fill="#7DD8FF"/>
+    <path d="M-60,40 C-110,60 -120,130 -100,170 C-80,130 -60,110 -40,90 Z" fill="#FF9F43"/>
+    <path d="M60,40 C110,60 120,130 100,170 C80,130 60,110 40,90 Z" fill="#FF9F43"/>
+    <path d="M-30,105 L0,180 L30,105 Z" fill="#FFD93D"/>
+  </g>
+
+  <!-- top corner sparkle accents -->
+  <g fill="#FFFFFF" opacity="0.9">
+    <circle cx="1450" cy="480" r="3"/>
+    <circle cx="1500" cy="560" r="3"/>
+    <circle cx="1600" cy="500" r="4"/>
+  </g>
+</svg>
