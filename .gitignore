@@ -1,0 +1,21 @@
+# Rust
+/agent/target/
+**/target/
+Cargo.lock
+
+# C++ / CMake
+control/build/
+build/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+*.o
+*.so
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
