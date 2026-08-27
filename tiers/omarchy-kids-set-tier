@@ -1,13 +1,15 @@
 #!/bin/bash
-# Switches the active Omarchy Kids age tier: installs tiers/<tier>/theme/
-# as an Omarchy theme and activates it via omarchy-theme-set.
+# Switches the active Omarchy Kids age tier.
 #
 # Usage: omarchy-kids-set-tier <tier>
 # Example: omarchy-kids-set-tier 5-7
 #
-# This is an early skeleton: it wires up the theme swap end to end. The
-# Hyprland config swap and the per-tier Quickshell launcher module (see
-# docs) are not implemented yet.
+# Installs tiers/<tier>/theme/ as an Omarchy theme and activates it, and
+# (tier-dependent) installs the tier's Quickshell launcher plugin, replaces
+# ~/.config/hypr/hyprland.lua with the tier's locked-down kiosk bindings,
+# and masks unused VTs so Ctrl+Alt+F<n> can't reach a raw login shell.
+#
+# Only tier 5-7 is implemented so far — see tiers/5-7/.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,7 +25,8 @@ if [[ -z $TIER ]]; then
   exit 1
 fi
 
-TIER_THEME_SRC="$SCRIPT_DIR/$TIER/theme"
+TIER_DIR="$SCRIPT_DIR/$TIER"
+TIER_THEME_SRC="$TIER_DIR/theme"
 if [[ ! -d $TIER_THEME_SRC ]]; then
   echo "Unknown tier '$TIER' (no theme at $TIER_THEME_SRC)" >&2
   exit 1
@@ -37,5 +40,63 @@ rm -rf "$THEME_DEST"
 cp -r "$TIER_THEME_SRC" "$THEME_DEST"
 
 omarchy-theme-set "$THEME_NAME"
+
+# Launcher plugin + its app list, if this tier ships one. Third-party
+# overlay/menu plugins are opt-in in Omarchy: dropping the plugin directory
+# into ~/.config/omarchy/plugins/ is not enough on its own, it also has to
+# be listed in shell.json's top-level plugins[] array or the shell logs
+# "plugin not enabled, not summoning" and silently no-ops (see
+# PluginRegistry.qml's isEnabled()).
+if [[ -d "$TIER_DIR/launcher" ]]; then
+  mkdir -p "$HOME/.config/omarchy/plugins" "$HOME/.config/omarchy-kids"
+  SHELL_JSON="$HOME/.config/omarchy/shell.json"
+  [[ -f $SHELL_JSON ]] || echo '{}' > "$SHELL_JSON"
+  for plugin_dir in "$TIER_DIR/launcher"/*/; do
+    [[ -f "${plugin_dir}manifest.json" ]] || continue
+    plugin_id="$(basename "$plugin_dir")"
+    rm -rf "$HOME/.config/omarchy/plugins/$plugin_id"
+    cp -r "$plugin_dir" "$HOME/.config/omarchy/plugins/$plugin_id"
+
+    tmp_json="$(mktemp)"
+    jq --arg id "$plugin_id" \
+      '.plugins = ((.plugins // []) | if any(.id == $id) then . else . + [{id: $id}] end)' \
+      "$SHELL_JSON" > "$tmp_json" && mv "$tmp_json" "$SHELL_JSON"
+  done
+  if [[ -f "$TIER_DIR/launcher/apps.json" ]]; then
+    cp "$TIER_DIR/launcher/apps.json" "$HOME/.config/omarchy-kids/launcher-apps.json"
+  fi
+fi
+
+# Hyprland kiosk bindings, if this tier ships an override. The stock config
+# is backed up once so it can be restored when moving to a tier that
+# doesn't ship its own hyprland.lua.
+if [[ -f "$TIER_DIR/hypr/hyprland.lua" ]]; then
+  HYPR_CONF="$HOME/.config/hypr/hyprland.lua"
+  HYPR_BACKUP="$HYPR_CONF.pre-omarchy-kids"
+  if [[ -f $HYPR_CONF && ! -f $HYPR_BACKUP ]]; then
+    cp "$HYPR_CONF" "$HYPR_BACKUP"
+  fi
+  cp "$TIER_DIR/hypr/hyprland.lua" "$HYPR_CONF"
+  hyprctl reload >/dev/null 2>&1 || true
+fi
+
+# VT lockdown: this tier has no terminal, so Ctrl+Alt+F<n> switching to a
+# raw getty and logging back in with the same account must not work either
+# — the kiosk restriction is a UI-layer thing otherwise, not an access
+# control. Mask the gettys for the unused VTs; VT1 (the graphical session)
+# stays untouched.
+if [[ $TIER == "5-7" ]]; then
+  sudo systemctl mask --now getty@tty2.service getty@tty3.service getty@tty4.service getty@tty5.service getty@tty6.service >/dev/null 2>&1 || true
+fi
+
+if [[ -d "$TIER_DIR/launcher" ]]; then
+  # Quickshell's own live plugin reload ("Local plugin changed, reloading")
+  # doesn't reliably pick up structural QML changes (new/changed component
+  # trees) — observed hanging onto stale layout after a plugin's first
+  # install until the shell process itself was restarted. Cheap and
+  # respawns automatically (Hyprland autostarts it), so just do it here
+  # rather than leave a half-applied plugin.
+  pkill -f 'quickshell -n -p' >/dev/null 2>&1 || true
+fi
 
 echo "Omarchy Kids tier set to '$TIER' (theme: $THEME_NAME)"

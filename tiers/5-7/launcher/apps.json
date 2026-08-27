@@ -1,0 +1,5 @@
+[
+  { "desktopId": "org.kde.gcompris", "label": "GCompris", "icon": "gcompris-qt", "swatch": "#5B8DEF" },
+  { "desktopId": "tuxpaint-fullscreen", "label": "Tux Paint", "icon": "tuxpaint", "swatch": "#FF9F43" },
+  { "desktopId": "org.kde.blinken", "label": "Blinken", "icon": "blinken", "swatch": "#4ADE80" }
+]

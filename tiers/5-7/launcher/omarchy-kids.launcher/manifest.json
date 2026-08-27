@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "omarchy-kids.launcher",
+  "name": "Omarchy Kids Launcher",
+  "version": "0.1.0",
+  "author": "Omarchy Kids",
+  "description": "Fullscreen kiosk icon grid for the 5-7 age tier — replaces the normal Omarchy menu",
+  "kinds": [
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "overlay": "Launcher.qml"
+  }
+}
