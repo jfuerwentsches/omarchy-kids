@@ -91,8 +91,8 @@ grant_getty_lockdown_sudo "$CHILD_USER"
 echo "omarchy-kids-bootstrap: applying branding and initial tier ('$TIER')..." >&2
 apply_branding_and_tier "$CHILD_USER" "$CHILD_NAME" "$TIER" "$THEME"
 
-echo "omarchy-kids-bootstrap: installing the agent's SSH key..." >&2
-install_agent_ssh_key "$CHILD_USER"
+echo "omarchy-kids-bootstrap: preparing SSH for pairing..." >&2
+prepare_agent_ssh_dir "$CHILD_USER"
 
 # UFW's SSH allow rule is intentionally NOT duplicated here — it's already
 # applied by omarchy-kids-agent's own package post_install (see

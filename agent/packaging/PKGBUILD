@@ -6,7 +6,7 @@ pkgdesc="Omarchy Kids session daemon + CLI: tiers, app unlocks, time budgets, us
 arch=('x86_64' 'aarch64')
 url="https://github.com/jfuerwentsches/omarchy-kids"
 license=('MIT')
-depends=('polkit' 'ufw' 'libnotify')
+depends=('polkit' 'ufw' 'libnotify' 'openssh')
 makedepends=('cargo')
 optdepends=('gcompris-qt: mini tier default app'
             'blinken: mini tier default app'
@@ -35,6 +35,7 @@ package() {
   install -Dm755 target/release/omarchy-kids-agent "$pkgdir/usr/bin/omarchy-kids-agent"
   install -Dm755 target/release/omarchy-kids-agentd "$pkgdir/usr/bin/omarchy-kids-agentd"
   install -Dm755 target/release/omarchy-kids-run "$pkgdir/usr/bin/omarchy-kids-run"
+  install -Dm755 target/release/omarchy-kids-pairing "$pkgdir/usr/bin/omarchy-kids-pairing"
 
   # Not in /usr/bin: only ever meant to be reached via the pkexec action
   # below (its path is baked into the policy's
