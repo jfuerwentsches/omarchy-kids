@@ -1,0 +1,114 @@
+#!/bin/bash
+# Phase 1 scripted bootstrap for the setup wizard (vault note "Omarchy Kids
+# - Implementierung Setup-Wizard", Phase 1 — steps 2-6 with no UI yet).
+# Wires together branding/tier, the parent/admin account, and the agent's
+# SSH key into one script that's manually testable in the dev VM before the
+# first-boot hook (Phase 2, issue #27) exists to drive it. See issue #20.
+#
+# Usage:
+#   sudo omarchy-kids-bootstrap \
+#     --child-user <linux-username> \
+#     --child-name "<display name>" \
+#     --tier <tier> \
+#     [--theme <theme-id>] \
+#     [--admin-user <name>] \
+#     [--admin-password <password>]
+#
+# --admin-user defaults to omarchy-kids-parent. --admin-password defaults
+# to a generated one, printed once — Phase 1 has no UI to prompt for it
+# interactively (see lib/account.sh); Phase 2's form replaces this.
+#
+# Must run as root: creates a Linux account and writes into another
+# account's home directory.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/account.sh
+source "$SCRIPT_DIR/lib/account.sh"
+# shellcheck source=lib/ssh-key.sh
+source "$SCRIPT_DIR/lib/ssh-key.sh"
+# shellcheck source=lib/branding-tier.sh
+source "$SCRIPT_DIR/lib/branding-tier.sh"
+
+usage() {
+  cat >&2 <<'EOF'
+Usage: omarchy-kids-bootstrap --child-user <user> --child-name "<name>" --tier <tier>
+                               [--theme <theme-id>] [--admin-user <name>]
+                               [--admin-password <password>]
+EOF
+}
+
+CHILD_USER=""
+CHILD_NAME=""
+TIER=""
+THEME=""
+ADMIN_USER="$OMARCHY_KIDS_ADMIN_USER_DEFAULT"
+ADMIN_PASSWORD=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --child-user) CHILD_USER="$2"; shift 2 ;;
+    --child-name) CHILD_NAME="$2"; shift 2 ;;
+    --tier) TIER="$2"; shift 2 ;;
+    --theme) THEME="$2"; shift 2 ;;
+    --admin-user) ADMIN_USER="$2"; shift 2 ;;
+    --admin-password) ADMIN_PASSWORD="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; usage; exit 1 ;;
+  esac
+done
+
+if [[ -z $CHILD_USER || -z $CHILD_NAME || -z $TIER ]]; then
+  usage
+  exit 1
+fi
+
+if [[ $EUID -ne 0 ]]; then
+  echo "omarchy-kids-bootstrap must run as root (creates accounts, writes another account's authorized_keys)" >&2
+  exit 1
+fi
+
+if ! id "$CHILD_USER" >/dev/null 2>&1; then
+  echo "omarchy-kids-bootstrap: no such user '$CHILD_USER' — expected the account Omarchy's own first-boot already created" >&2
+  exit 1
+fi
+
+GENERATED_PASSWORD=0
+if [[ -z $ADMIN_PASSWORD ]]; then
+  ADMIN_PASSWORD="$(generate_admin_password)"
+  GENERATED_PASSWORD=1
+fi
+
+# Account/sudo adjustments run BEFORE the tier switch below: set-tier's VT
+# lockdown step (`sudo systemctl mask ...` for getty@tty2-6) has to run as
+# the child account, and needs the narrow NOPASSWD grant in place first —
+# both because the child is about to lose `wheel` entirely, and because a
+# non-interactive sudo call has no tty to prompt on even beforehand.
+echo "omarchy-kids-bootstrap: setting up parent/admin account ('$ADMIN_USER')..." >&2
+create_parent_admin_account "$CHILD_USER" "$ADMIN_USER" "$ADMIN_PASSWORD"
+grant_getty_lockdown_sudo "$CHILD_USER"
+
+echo "omarchy-kids-bootstrap: applying branding and initial tier ('$TIER')..." >&2
+apply_branding_and_tier "$CHILD_USER" "$CHILD_NAME" "$TIER" "$THEME"
+
+echo "omarchy-kids-bootstrap: installing the agent's SSH key..." >&2
+install_agent_ssh_key "$CHILD_USER"
+
+# UFW's SSH allow rule is intentionally NOT duplicated here — it's already
+# applied by omarchy-kids-agent's own package post_install (see
+# agent/packaging/PKGBUILD and docs/agent-protocol.md "UFW SSH rule
+# ownership", issue #18). This is just a diagnostic check so a misordered
+# install (wizard running before the agent package, or UFW re-enabled
+# after) fails loudly instead of leaving the child host silently
+# unreachable for pairing.
+if command -v ufw >/dev/null && ufw status | grep -q "^Status: active"; then
+  if ! ufw status | grep -qi "22/tcp.*ALLOW"; then
+    echo "omarchy-kids-bootstrap: WARNING — UFW is active but SSH isn't allowed yet; omarchy-kids-agent's package post_install should have done this (see docs/agent-protocol.md)" >&2
+  fi
+fi
+
+echo "omarchy-kids-bootstrap: done." >&2
+if [[ $GENERATED_PASSWORD -eq 1 ]]; then
+  echo "omarchy-kids-bootstrap: generated admin password for '$ADMIN_USER': $ADMIN_PASSWORD" >&2
+  echo "omarchy-kids-bootstrap: record this now — it is not stored or shown again." >&2
+fi

@@ -100,6 +100,18 @@ SIGKILL after a 5s grace) if agentd says it's no longer allowed.
   error — kept so the wire format doesn't need a second redesign once photo/
   playlist transfer (see the Roadmap/Spotify vault notes) actually lands.
 
+## UFW SSH rule ownership (issue #18)
+
+The agent package's `post_install` (above) already runs `ufw allow ssh`
+when UFW is active. The setup wizard's bootstrap script does **not**
+duplicate this — one owner avoids two places doing the same thing for
+unclear reasons, and the package hook already covers both fresh installs
+and upgrades. The bootstrap script only logs a warning if it finds UFW
+active without the rule, so a misordered install (wizard run before the
+agent package, or UFW re-enabled afterwards) fails loudly instead of
+leaving the child host silently unreachable for pairing. See
+`setup-wizard/bootstrap/omarchy-kids-bootstrap`.
+
 ## Not yet done
 
 - No replay of fail-open events once agentd comes back (see above).
@@ -107,5 +119,6 @@ SIGKILL after a 5s grace) if agentd says it's no longer allowed.
   undecided (vault note "Noch offene Punkte") — only `mini = 1` minute is
   set as a default.
 - The account-topology requirement above (child not in `wheel`, a separate
-  admin account exists) isn't enforced by any code yet — that's the setup
-  wizard's job, which is still a stub.
+  admin account exists) is now enforced by the setup wizard's Phase 1
+  bootstrap script (`setup-wizard/bootstrap/`) — see that folder's README.
+  Not yet wired into an actual first-boot hook (setup-wizard issue #27).
