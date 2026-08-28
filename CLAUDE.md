@@ -57,11 +57,32 @@ is solid. Don't start scaffolding other tiers unless asked.
     binding off, only `SUPER+SPACE` survives (→ the kiosk launcher)
   - `omarchy-kids-set-tier` — applies all of the above, plus masks
     `getty@tty2-6` (VT-switch lockdown) for this tier
-- `agent/`, `control/`, `quickshell-plugin/`, `setup-wizard/` are stubs/skeletons only — no real logic yet.
+- `agent/` (issues #1-#15) is implemented, not a stub: `agent`/`agentd`/
+  `omarchy-kids-run`/`omarchy-kids-override-helper` — protocol, time
+  budgets, PIN override, packaging. See `docs/agent-protocol.md`.
+- `setup-wizard/` (issues #16-#26 done so far, project board:
+  [Pairing & Setup Wizard](https://github.com/users/jfuerwentsches/projects/3))
+  also has real logic now, not just a stub:
+  - `setup-wizard/bootstrap/` — Phase 1 scripted bootstrap (account/wheel
+    topology, branding, initial tier switch), verified end-to-end in the
+    dev VM. See its README.
+  - `agent/pairing/` (`omarchy-kids-pairing` binary, lives in the agent
+    workspace though it's the setup-wizard's Pairing track) — child-to-
+    Control-Center pairing exchange (mDNS + QR discovery, SPAKE2-
+    authenticated key handoff), verified over a real network in the dev
+    VM. See `docs/agent-protocol.md`'s "Pairing protocol" section.
+  - Not yet done: the actual first-boot hook wiring the bootstrap script
+    into Omarchy's provisioning flow, and the parent-facing setup form
+    (issue #27 — the hook API itself is researched/documented, just not
+    built); the wizard step that actually invokes pairing with a kiosk UI
+    (open UFW-rule-lifecycle question noted in `docs/agent-protocol.md`);
+    failed-pairing retry UX (#25); multi-child reuse (#28).
+- `control/` and `quickshell-plugin/` are still stubs/skeletons — no real
+  logic yet.
 - Not yet done: app installation as part of the package (nothing in the
   current line-up is installed by the package yet), the `omarkid-gcompris`
-  fork itself, app-wrapper/time-tracking integration, real SSH
-  pairing/agent, locale implementation (concept is written, not built).
+  fork itself, app-wrapper/time-tracking integration, locale implementation
+  (concept is written, not built).
 
 ## Dev environment
 
@@ -82,9 +103,12 @@ is solid. Don't start scaffolding other tiers unless asked.
 
 ## Non-obvious things worth knowing before touching this codebase
 
-- **Omarchy ships UFW active by default**, blocking inbound SSH. The real
-  setup-wizard has to open the agent's SSH port explicitly — it's not just
-  a `command=`-key problem. (`Omarchy Kids - Implementierung Agent` vault note.)
+- **Omarchy ships UFW active by default**, blocking inbound SSH — not just
+  a `command=`-key problem. Handled: the agent package's `post_install`
+  runs `ufw allow ssh` (see `docs/agent-protocol.md`). Still open: the
+  pairing listener's own port (default 7420) has no UFW rule at all yet —
+  nothing opens/closes it around a `omarchy-kids-pairing serve` call (see
+  `docs/agent-protocol.md`'s "Pairing protocol" section).
 - **SSH-invoked commands run outside the graphical session** (no Wayland/
   D-Bus env vars) — this is *why* the architecture splits `agent` (thin SSH
   receiver) from `agentd` (session-resident daemon that actually touches
