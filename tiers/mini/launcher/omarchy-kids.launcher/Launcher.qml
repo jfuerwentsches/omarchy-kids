@@ -52,6 +52,38 @@ Item {
     else root.open("{}")
   }
 
+  // Pre-warning (issue #8): agentd calls this over Quickshell IPC
+  // (`omarchy-shell omarchyKidsLauncher preWarn <app> <secondsLeft>`) when an
+  // active session is within its tier's lead time of a budget/window
+  // cutoff. Shown regardless of whether the launcher grid itself is open —
+  // the child is presumably inside the app being warned about, not looking
+  // at this overlay — so it lives in its own always-present PanelWindow
+  // below, not gated on `opened`. Non-readers (5-7) get an acoustic cue
+  // alongside the visual banner, per "Omarchy Kids - Parental Controls und
+  // Bildschirmzeit".
+  property bool warningVisible: false
+  property int warningSecondsLeft: 0
+
+  function preWarn(app, secondsLeft) {
+    root.warningSecondsLeft = Number(secondsLeft) || 0
+    root.warningVisible = true
+    warningHideTimer.restart()
+    Quickshell.execDetached(["canberra-gtk-play", "-i", "alarm-clock-elapsed"])
+  }
+
+  Timer {
+    id: warningHideTimer
+    interval: 4000
+    onTriggered: root.warningVisible = false
+  }
+
+  IpcHandler {
+    target: "omarchyKidsLauncher"
+    function preWarn(app: string, secondsLeft: string): void {
+      root.preWarn(app, secondsLeft)
+    }
+  }
+
   function loadTiles(raw) {
     try {
       root.tiles = JSON.parse(raw) || []
@@ -66,7 +98,10 @@ Item {
     if (index < 0 || index >= tileModel.count) return
     var row = tileModel.get(index)
     root.dismiss()
-    Quickshell.execDetached(["uwsm-app", "--", "gtk-launch", row.desktopId + ".desktop"])
+    // Every unlocked app runs through the wrapper instead of gtk-launch
+    // directly, so agentd sees start/stop and can cut a session short on a
+    // time-budget/window cutoff — see agent/wrapper and issue #5.
+    Quickshell.execDetached(["uwsm-app", "--", "omarchy-kids-run", row.desktopId])
   }
 
   ListModel { id: tileModel }
@@ -167,6 +202,47 @@ Item {
               onClicked: root.launchIndex(tile.index)
             }
           }
+        }
+      }
+    }
+  }
+
+  PanelWindow {
+    id: warningPanel
+    visible: root.warningVisible
+    anchors { top: true }
+    margins.top: 40
+    implicitWidth: 360
+    implicitHeight: 100
+    color: "transparent"
+    WlrLayershell.namespace: "omarchy-kids-prewarning"
+    WlrLayershell.layer: WlrLayer.Overlay
+    exclusionMode: ExclusionMode.Ignore
+
+    Rectangle {
+      anchors.centerIn: parent
+      width: 340
+      height: 100
+      radius: Style.cornerRadius
+      color: "#F59E0B"
+      border.width: 4
+      border.color: "#FFFFFF"
+
+      Row {
+        anchors.centerIn: parent
+        spacing: 20
+
+        Text {
+          text: "⏰"
+          font.pixelSize: 48
+        }
+
+        Text {
+          text: Math.max(0, Math.round(root.warningSecondsLeft / 60)) + " min"
+          color: "#FFFFFF"
+          font.family: Style.font.menuFamily
+          font.pixelSize: 36
+          font.bold: true
         }
       }
     }

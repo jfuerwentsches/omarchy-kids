@@ -1,0 +1,19 @@
+[Unit]
+Description=Omarchy Kids session daemon (time budgets, app wrapper events, usage log)
+# Needs the graphical session's runtime dir (XDG_RUNTIME_DIR) to bind its
+# socket and to reach the Quickshell instance for pre-warning IPC — starting
+# before graphical-session.target is up would just fail the bind.
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/omarchy-kids-agentd
+Restart=on-failure
+RestartSec=2
+# Fail-open is the wrapper's job when it can't reach agentd at all (issue
+# #6); restarting quickly here just shortens how long that fail-open window
+# actually is.
+
+[Install]
+WantedBy=graphical-session.target

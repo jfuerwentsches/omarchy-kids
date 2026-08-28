@@ -95,7 +95,16 @@ if [[ -d "$TIER_DIR/launcher" ]]; then
       "$SHELL_JSON" > "$tmp_json" && mv "$tmp_json" "$SHELL_JSON"
   done
   if [[ -f "$TIER_DIR/launcher/apps.json" ]]; then
-    cp "$TIER_DIR/launcher/apps.json" "$HOME/.config/omarchy-kids/launcher-apps.json"
+    # Preferred path: hand the tier's app list to agentd, which becomes the
+    # sole writer of launcher-apps.json from then on (base tiles ++ active
+    # temporary unlocks from `agent unlock`/`agent override` — see
+    # docs/agent-protocol.md). Falls back to the old direct copy if agentd
+    # isn't reachable yet (e.g. a fresh box before the daemon is enabled),
+    # so tier switching still works without hard-depending on it.
+    if ! omarchy-kids-agent set-tier "$TIER" --apps-file "$TIER_DIR/launcher/apps.json" >/dev/null 2>&1; then
+      echo "omarchy-kids-set-tier: omarchy-kids-agentd not reachable, falling back to a direct copy of launcher-apps.json" >&2
+      cp "$TIER_DIR/launcher/apps.json" "$HOME/.config/omarchy-kids/launcher-apps.json"
+    fi
   fi
 fi
 

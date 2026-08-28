@@ -1,0 +1,77 @@
+# Maintainer: Omarchy Kids
+pkgname=omarchy-kids-agent
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Omarchy Kids session daemon + CLI: tiers, app unlocks, time budgets, usage log (issue #14)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/jfuerwentsches/omarchy-kids"
+license=('MIT')
+depends=('polkit' 'ufw' 'libnotify')
+makedepends=('cargo')
+optdepends=('gcompris-qt: mini tier default app'
+            'blinken: mini tier default app'
+            'tuxpaint: mini tier default app')
+source=()
+sha256sums=()
+
+pkgver() {
+  cd "$startdir/.."
+  echo "$pkgver"
+}
+
+build() {
+  cd "$startdir/.."
+  cargo build --release --workspace
+}
+
+check() {
+  cd "$startdir/.."
+  cargo test --release --workspace
+}
+
+package() {
+  cd "$startdir/.."
+
+  install -Dm755 target/release/omarchy-kids-agent "$pkgdir/usr/bin/omarchy-kids-agent"
+  install -Dm755 target/release/omarchy-kids-agentd "$pkgdir/usr/bin/omarchy-kids-agentd"
+  install -Dm755 target/release/omarchy-kids-run "$pkgdir/usr/bin/omarchy-kids-run"
+
+  # Not in /usr/bin: only ever meant to be reached via the pkexec action
+  # below (its path is baked into the policy's
+  # org.freedesktop.policykit.exec.path annotation), never run directly.
+  install -Dm755 target/release/omarchy-kids-override-helper \
+    "$pkgdir/usr/lib/omarchy-kids/omarchy-kids-override-helper"
+
+  install -Dm644 packaging/systemd/omarchy-kids-agentd.service \
+    "$pkgdir/usr/lib/systemd/user/omarchy-kids-agentd.service"
+
+  install -Dm644 packaging/polkit/net.omarchykids.agent.policy \
+    "$pkgdir/usr/share/polkit-1/actions/net.omarchykids.agent.policy"
+}
+
+post_install() {
+  # Per-user systemd unit: --global enables it for every user account
+  # (present and future) without needing a specific logged-in session to
+  # target — the setup wizard is expected to `systemctl --user start` it (or
+  # a fresh login will, since `graphical-session.target` pulls it in) for
+  # the child account specifically once that account exists.
+  systemctl --global enable omarchy-kids-agentd.service || true
+
+  # Omarchy ships UFW active with inbound SSH blocked by default (verified
+  # in the dev VM — see CLAUDE.md). Without this, the Control Center's
+  # `agent` connections never arrive, independent of the SSH key/pairing
+  # setup. `agent` itself is invoked via a `command=`-restricted key in
+  # authorized_keys, not a separate port, so this is just the standard SSH
+  # allow rule.
+  if command -v ufw >/dev/null && ufw status | grep -q "^Status: active"; then
+    ufw allow ssh || true
+  fi
+}
+
+post_upgrade() {
+  post_install
+}
+
+post_remove() {
+  systemctl --global disable omarchy-kids-agentd.service || true
+}

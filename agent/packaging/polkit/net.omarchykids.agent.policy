@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <!--
+    PIN/polkit override path (issue #9): `omarchy-kids-agent override <app>`
+    runs `pkexec --user <child> .../omarchy-kids-override-helper ...`.
+    `auth_admin` here is what makes pkexec prompt for an *administrator's*
+    credentials — on a correctly set-up child computer that's the separate
+    parent/admin account, not the child's own (non-admin) account, so the
+    prompt itself functions as the "PIN entry" from the design note. This
+    requires the child account to NOT be a member of `wheel`/the polkit admin
+    group; enforcing that account topology is the setup wizard's job, not
+    this package's.
+
+    The `org.freedesktop.policykit.exec.path` annotation is what lets pkexec
+    resolve this specific action (and thus this specific auth requirement)
+    for the helper, instead of falling back to its generic
+    org.freedesktop.policykit.exec action.
+  -->
+  <action id="net.omarchykids.agent.override-unlock">
+    <description>Temporarily unlock an app for the child account</description>
+    <message>Authentication is required to unlock an app for the child account</message>
+    <icon_name>security-high-symbolic</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/omarchy-kids/omarchy-kids-override-helper</annotate>
+  </action>
+</policyconfig>
