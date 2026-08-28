@@ -130,6 +130,19 @@ if [[ $TIER == "mini" ]]; then
   sudo systemctl mask --now getty@tty2.service getty@tty3.service getty@tty4.service getty@tty5.service getty@tty6.service >/dev/null 2>&1 || true
 fi
 
+# Bar visibility: the kiosk Hyprland config above disables every default
+# binding, but never touched the Omarchy top bar itself — its own menu icon
+# (omarchy.menu) still opens the normal Omarchy menu (terminal, file
+# manager, ...) by mouse/touch regardless of what keybindings exist,
+# defeating the whole point of the lockdown. Hide it for tiers with a kiosk
+# launcher; the launcher grid carries its own power-off tile (Launcher.qml)
+# so losing the bar doesn't also lose the ability to shut the machine down.
+if [[ $TIER == "mini" ]]; then
+  omarchy-toggle-bar on >/dev/null 2>&1 || true
+else
+  omarchy-toggle-bar off >/dev/null 2>&1 || true
+fi
+
 if [[ -d "$TIER_DIR/launcher" ]]; then
   # Quickshell's own live plugin reload ("Local plugin changed, reloading")
   # doesn't reliably pick up structural QML changes (new/changed component

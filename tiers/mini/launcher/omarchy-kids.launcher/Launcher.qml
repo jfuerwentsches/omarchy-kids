@@ -31,9 +31,21 @@ Item {
   property int tileSpacing: 40
   readonly property int cornerRadius: Style.cornerRadius
 
+  // Special, non-app tile appended after whatever agentd/omarchy-kids-set-tier
+  // wrote to launcher-apps.json (see loadTiles) — always present regardless
+  // of tier/unlock state, since a child must always be able to power off
+  // their own machine (systemd-logind grants this to any locally active
+  // session without admin rights — see docs/agent-protocol.md). Handled
+  // entirely in QML, not through omarchy-kids-run, since it isn't an app.
+  readonly property string powerOffId: "__power_off__"
+  property bool confirmingPowerOff: false
+  property int confirmSelectedIndex: 0 // 0 = cancel, 1 = confirm — defaults to cancel so an accidental Enter doesn't shut down mid-play
+
   function open(payloadJson) {
     root.opened = true
     root.selectedIndex = 0
+    root.confirmingPowerOff = false
+    root.confirmSelectedIndex = 0
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -43,6 +55,7 @@ Item {
 
   function dismiss() {
     root.opened = false
+    root.confirmingPowerOff = false
     if (root.shell && typeof root.shell.hide === "function")
       root.shell.hide((root.manifest && root.manifest.id) || "omarchy-kids.launcher")
   }
@@ -92,16 +105,42 @@ Item {
     }
     tileModel.clear()
     for (var i = 0; i < root.tiles.length; i++) tileModel.append(root.tiles[i])
+    tileModel.append({
+      desktopId: root.powerOffId,
+      label: "Ausschalten",
+      icon: "system-shutdown",
+      swatch: "#64748B"
+    })
   }
 
   function launchIndex(index) {
     if (index < 0 || index >= tileModel.count) return
     var row = tileModel.get(index)
+    if (row.desktopId === root.powerOffId) {
+      root.confirmingPowerOff = true
+      root.confirmSelectedIndex = 0
+      return
+    }
     root.dismiss()
     // Every unlocked app runs through the wrapper instead of gtk-launch
     // directly, so agentd sees start/stop and can cut a session short on a
     // time-budget/window cutoff — see agent/wrapper and issue #5.
     Quickshell.execDetached(["uwsm-app", "--", "omarchy-kids-run", row.desktopId])
+  }
+
+  function confirmPowerOff() {
+    root.confirmingPowerOff = false
+    root.dismiss()
+    // The active local session is granted power-off without admin auth by
+    // systemd-logind's default policy (org.freedesktop.login1.power-off,
+    // "implicit active: yes") — no sudo/wheel needed, verified in the dev
+    // VM. Deliberately not routed through omarchy-kids-run: this isn't an
+    // app agentd should time-track.
+    Quickshell.execDetached(["systemctl", "poweroff"])
+  }
+
+  function cancelPowerOff() {
+    root.confirmingPowerOff = false
   }
 
   ListModel { id: tileModel }
@@ -130,6 +169,24 @@ Item {
 
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: function(event) {
+        if (root.confirmingPowerOff) {
+          if (event.key === Qt.Key_Escape) {
+            root.cancelPowerOff()
+            event.accepted = true
+          } else if (event.key === Qt.Key_Left) {
+            root.confirmSelectedIndex = 0
+            event.accepted = true
+          } else if (event.key === Qt.Key_Right) {
+            root.confirmSelectedIndex = 1
+            event.accepted = true
+          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            if (root.confirmSelectedIndex === 1) root.confirmPowerOff()
+            else root.cancelPowerOff()
+            event.accepted = true
+          }
+          return
+        }
+
         if (event.key === Qt.Key_Escape) {
           root.dismiss()
           event.accepted = true
@@ -148,6 +205,7 @@ Item {
       Row {
         anchors.centerIn: parent
         spacing: root.tileSpacing
+        visible: !root.confirmingPowerOff
 
         Repeater {
           model: tileModel
@@ -200,6 +258,58 @@ Item {
               cursorShape: Qt.PointingHandCursor
               onContainsMouseChanged: if (containsMouse) root.selectedIndex = tile.index
               onClicked: root.launchIndex(tile.index)
+            }
+          }
+        }
+      }
+
+      // "Really power off?" — icon-only like the rest of this launcher (no
+      // text dependency for a pre-reader), reusing the tile visual language.
+      // Defaults to the X/cancel tile selected (see confirmSelectedIndex).
+      Row {
+        anchors.centerIn: parent
+        spacing: root.tileSpacing
+        visible: root.confirmingPowerOff
+
+        Repeater {
+          model: [
+            { glyph: "✕", swatch: "#DC2626", onSelect: root.cancelPowerOff },
+            { glyph: "✓", swatch: "#16A34A", onSelect: root.confirmPowerOff }
+          ]
+
+          delegate: Rectangle {
+            id: confirmTile
+            required property int index
+            required property string glyph
+            required property string swatch
+            required property var onSelect
+
+            readonly property bool hasCursor: index === root.confirmSelectedIndex
+
+            width: root.tileSize
+            height: root.tileSize
+            radius: root.cornerRadius
+            color: confirmTile.swatch
+            border.width: hasCursor ? 6 : 0
+            border.color: root.foreground
+            scale: hasCursor ? 1.04 : 1.0
+
+            Behavior on scale { NumberAnimation { duration: 120 } }
+
+            Text {
+              anchors.centerIn: parent
+              text: confirmTile.glyph
+              color: "#FFFFFF"
+              font.pixelSize: 110
+              font.bold: true
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onContainsMouseChanged: if (containsMouse) root.confirmSelectedIndex = confirmTile.index
+              onClicked: confirmTile.onSelect()
             }
           }
         }

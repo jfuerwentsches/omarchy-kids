@@ -120,7 +120,11 @@ is solid. Don't start scaffolding other tiers unless asked.
 - **Kiosk lockdown is a UI-layer thing only, unless you also close the OS
   escape hatches.** Hiding apps from the launcher doesn't stop a VT switch
   (`Ctrl+Alt+F2`) to a raw login shell on the same account. Hence the
-  getty-masking in `omarchy-kids-set-tier` for the mini tier.
+  getty-masking in `omarchy-kids-set-tier` for the mini tier. Same principle
+  bit again on 2026-08-29: overriding Hyprland's keybindings doesn't touch the
+  Omarchy top bar's own menu icon, which still opens the normal Omarchy menu
+  by mouse/touch — `omarchy-kids-set-tier` now hides the bar for tier mini
+  too (see `tiers/README.md`).
 - **Franchise-themed content (Paw Patrol, Peppa Pig, Bluey, ...) is
   deliberately out of scope for now** — own generic themes only; see
   `Omarchy Kids - Themes` for the licensing reasoning and the later plan to
