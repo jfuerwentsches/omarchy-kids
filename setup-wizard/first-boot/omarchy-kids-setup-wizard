@@ -22,6 +22,12 @@ MARKER_FILE="$MARKER_DIR/done"
 LANGUAGE_FILE="$MARKER_DIR/child-language"
 PROMPT_COLOR="#845DF9"
 
+# Match omarchy-kids-pairing serve's own CLI defaults exactly (see
+# agent/pairing/src/main.rs) — nothing new for a future reader to
+# reconcile between the two.
+PAIRING_PORT=7420
+PAIRING_TIMEOUT_MINUTES=10
+
 if [[ $EUID -ne 0 ]]; then
   echo "omarchy-kids-setup-wizard must run as root" >&2
   exit 1
@@ -128,6 +134,61 @@ ask_language() {
   language=$(gum choose --header "Language / Sprache" <<<$'de\nen') && printf '%s' "$language"
 }
 
+# open_pairing_ufw_rule / close_pairing_ufw_rule
+#
+# Found missing during pairing verification (vault note "Omarchy Kids -
+# Implementierung Setup-Wizard", "Tracking — Pairing-Protokoll implementiert
+# und verifiziert"): UFW blocks the pairing port by default, and nothing
+# opened/closed it around a `serve` call — testing worked around it with a
+# manual `ufw allow`. Unlike the getty-lockdown sudo grant
+# (grant_getty_lockdown_sudo in bootstrap/lib/account.sh), no sudoers
+# workaround is needed here: this wizard already runs as root, so it can
+# manage the rule directly. Scoped to exactly the pairing window — the
+# listener itself is one-shot, not a standing daemon (see serve's own doc
+# comment), so the port has no business staying open past it.
+open_pairing_ufw_rule() {
+  local port="$1"
+  command -v ufw >/dev/null || return 0
+  ufw status | grep -q "^Status: active" || return 0
+  ufw allow "$port/tcp" comment 'omarchy-kids pairing window' >/dev/null
+}
+
+close_pairing_ufw_rule() {
+  local port="$1"
+  command -v ufw >/dev/null || return 0
+  ufw status | grep -q "^Status: active" || return 0
+  ufw --force delete allow "$port/tcp" >/dev/null 2>&1 || true
+}
+
+# run_pairing <child_user>
+#
+# Best-effort, not a hard requirement for setup to complete: the Control
+# Center this is meant to pair with doesn't exist yet (root CLAUDE.md
+# Status — control/ is still a stub), so a real parent running this today
+# has nothing to pair against. Blocking first boot on a successful pairing
+# would mean setup never finishes for anyone. Runs omarchy-kids-pairing as
+# the child account (issues #22/#23) — it writes into the child's own
+# ~/.ssh/authorized_keys, matching how the tier switch in
+# bootstrap/lib/branding-tier.sh already runs as the child via `sudo -u`.
+# `serve` prints its pairing code and a terminal-renderable QR code to
+# stdout itself (see agent/pairing/src/main.rs) — nothing extra needed to
+# "show" it here, tty1 already is the child's screen at this point. A
+# skipped/timed-out/failed attempt is logged and left for a manual
+# `omarchy-kids-pairing serve` re-run later — retry UX is issue #25,
+# intentionally not built here.
+run_pairing() {
+  local child_user="$1"
+  echo "omarchy-kids-setup-wizard: starting pairing window (${PAIRING_TIMEOUT_MINUTES} min) — open the Control Center now, or press Ctrl+C to skip and pair later." >&2
+
+  open_pairing_ufw_rule "$PAIRING_PORT"
+  if sudo -u "$child_user" omarchy-kids-pairing serve --port "$PAIRING_PORT" --timeout-minutes "$PAIRING_TIMEOUT_MINUTES"; then
+    echo "omarchy-kids-setup-wizard: pairing succeeded." >&2
+  else
+    echo "omarchy-kids-setup-wizard: WARNING — pairing was not completed (skipped, timed out, or failed). Setup continues; pair later by running 'omarchy-kids-pairing serve' as '$child_user'." >&2
+  fi
+  close_pairing_ufw_rule "$PAIRING_PORT"
+}
+
 # disable_autologin_once_cleanup
 #
 # Omarchy's own first-boot (omarchy-provision-owner, see
@@ -160,6 +221,8 @@ LANGUAGE="$(ask_language)"
 
 echo "omarchy-kids-setup-wizard: running bootstrap for '$CHILD_USER' (tier '$TIER')..." >&2
 omarchy-kids-bootstrap --child-user "$CHILD_USER" --child-name "$CHILD_NAME" --tier "$TIER"
+
+run_pairing "$CHILD_USER"
 
 disable_autologin_once_cleanup
 

@@ -81,16 +81,26 @@ is solid. Don't start scaffolding other tiers unless asked.
     found-along-the-way gap: Omarchy's own first-boot drops SDDM autologin
     after the first boot on unencrypted installs, which would silently
     reintroduce a reachable login prompt for the mini tier — the wizard
-    now keeps autologin permanent instead. Verified so far at the
-    logic level in the dev VM (account detection, tier discovery); not yet
-    verified against a real `omarchy-provision-owner.service` run (would
-    need a fresh deferred-provisioning install). See its README.
-  - Not yet done: the wizard step that actually invokes pairing with a
-    kiosk UI (open UFW-rule-lifecycle question noted in
-    `docs/agent-protocol.md`); failed-pairing retry UX (#25); multi-child
-    reuse (#28, cross-machine, i.e. reuse between siblings' separate
-    machines). A related but separate question — multiple children sharing
-    one machine — was raised and intentionally deferred for now (SDDM
+    now keeps autologin permanent instead. Also now invokes pairing itself
+    (issues #22/#23 wiring): after bootstrap, runs `sudo -u <child_user>
+    omarchy-kids-pairing serve`, opening/closing the pairing port's UFW
+    rule around the call (the gap noted in `docs/agent-protocol.md` — no
+    sudoers workaround needed, the wizard already runs as root). `serve`
+    prints its pairing code/QR straight to tty1, so no extra UI was
+    needed. Deliberately best-effort: Control Center doesn't exist yet, so
+    a skipped/timed-out/failed pairing just logs a warning and setup still
+    completes — re-pairing later is a manual re-run (#25, retry UX, is
+    intentionally not built here). Verified so far in the dev VM: account
+    detection, tier discovery, the UFW open/close functions, and a real
+    `serve`/`pair` round trip over `sudo -u <child_user>` (correctly
+    installed the key with correct ownership; `SIGINT` mid-`serve` exits
+    non-zero as expected). Not yet verified: the `gum` prompts end-to-end,
+    or the systemd unit against a real `omarchy-provision-owner.service`
+    run (needs a fresh deferred-provisioning install). See its README.
+  - Not yet done: failed-pairing retry UX (#25); multi-child reuse (#28,
+    cross-machine, i.e. reuse between siblings' separate machines). A
+    related but separate question — multiple children sharing one
+    machine — was raised and intentionally deferred for now (SDDM
     autologin is single-account machine-wide, the real blocker); see the
     vault note's "Offene Frage: mehrere Kinder auf EINEM Rechner" tracking
     entry.
