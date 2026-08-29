@@ -6,7 +6,7 @@ pkgdesc="Omarchy Kids session daemon + CLI: tiers, app unlocks, time budgets, us
 arch=('x86_64' 'aarch64')
 url="https://github.com/jfuerwentsches/omarchy-kids"
 license=('MIT')
-depends=('polkit' 'ufw' 'libnotify' 'openssh')
+depends=('polkit' 'ufw' 'libnotify' 'openssh' 'sudo')
 makedepends=('cargo')
 optdepends=('gcompris-qt: mini tier default app'
             'blinken: mini tier default app'
@@ -42,6 +42,8 @@ package() {
   # org.freedesktop.policykit.exec.path annotation), never run directly.
   install -Dm755 target/release/omarchy-kids-override-helper \
     "$pkgdir/usr/lib/omarchy-kids/omarchy-kids-override-helper"
+  install -Dm755 target/release/omarchy-kids-repair-helper \
+    "$pkgdir/usr/lib/omarchy-kids/omarchy-kids-repair-helper"
 
   install -Dm644 packaging/systemd/omarchy-kids-agentd.service \
     "$pkgdir/usr/lib/systemd/user/omarchy-kids-agentd.service"

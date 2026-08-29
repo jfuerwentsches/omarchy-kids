@@ -284,6 +284,9 @@ fn handle_connection(
     };
 
     let fingerprint = install_pubkey(&pubkey)?;
+    let username = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .context("cannot determine the current user (USER/LOGNAME unset) to report to the Control Center")?;
 
     let confirm = proto::encrypt(
         &shared_key,
@@ -291,6 +294,7 @@ fn handle_connection(
             hostname: hostname.to_string(),
             ssh_port,
             fingerprint: fingerprint.clone(),
+            username,
         },
     )?;
     proto::write_message(&mut writer, &confirm)?;
@@ -448,11 +452,12 @@ fn pair(
             hostname,
             ssh_port,
             fingerprint,
-        }) => (hostname, ssh_port, fingerprint),
+            username,
+        }) => (hostname, ssh_port, fingerprint, username),
         Ok(_) => bail!("expected a Confirm payload"),
         Err(e) => bail!("decrypting the server's confirmation failed (wrong code?): {e:#}"),
     };
-    let (hostname, ssh_port, fingerprint) = confirm;
+    let (hostname, ssh_port, fingerprint, username) = confirm;
 
     println!("Paired with {hostname} (SSH port {ssh_port}).");
     println!("Key fingerprint: {fingerprint}");
@@ -484,7 +489,7 @@ fn pair(
         );
     }
 
-    println!("Try: ssh -i {} -p {ssh_port} {hostname}", key_out.display());
+    println!("Try: ssh -i {} -p {ssh_port} {username}@{hostname}", key_out.display());
     println!(
         "PAIR_RESULT: {}",
         json!({
@@ -492,6 +497,7 @@ fn pair(
             "ssh_port": ssh_port,
             "fingerprint": fingerprint,
             "key_path": key_out.to_string_lossy(),
+            "username": username,
         })
     );
 

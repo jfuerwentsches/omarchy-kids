@@ -67,10 +67,18 @@ pub enum SecurePayload {
     /// Server -> client: confirms the key was installed, and what to
     /// connect to. `fingerprint` is shown to the parent for a final visual
     /// check, on top of (not instead of) the SPAKE2 authentication.
+    /// `username` is the child account `serve` ran as — without it the
+    /// Control Center has no way to know which account to SSH into, since
+    /// the child's username is chosen freely during Omarchy's own account
+    /// setup and was never otherwise transmitted (found missing during
+    /// issue #29's real end-to-end verification: pairing itself worked,
+    /// but the paired key was then unusable because nothing recorded whose
+    /// authorized_keys it lived in).
     Confirm {
         hostname: String,
         ssh_port: u16,
         fingerprint: String,
+        username: String,
     },
     /// Client -> server: the parent confirmed the fingerprint matches.
     Ack { confirmed: bool },

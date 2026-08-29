@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["common", "agent", "agentd", "wrapper", "override-helper", "pairing"]
+members = ["common", "agent", "agentd", "wrapper", "override-helper", "pairing", "repair-helper"]
 
 [workspace.package]
 version = "0.1.0"
@@ -16,4 +16,5 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 libc = "0.2"
+shlex = "1"
 omarchy-kids-common = { path = "common" }

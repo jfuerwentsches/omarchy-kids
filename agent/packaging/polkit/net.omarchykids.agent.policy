@@ -30,4 +30,25 @@
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/omarchy-kids/omarchy-kids-override-helper</annotate>
   </action>
+
+  <!--
+    Pairing re-trigger path (issue #25's remaining gap, see
+    docs/agent-protocol.md's "Pairing protocol" section): `omarchy-kids-agent
+    repair-pairing` runs `pkexec .../omarchy-kids-repair-helper ...` with no
+    `--user`, so this one runs as root (unlike the override action above) —
+    it needs root to toggle the pairing port's UFW rule, then drops to the
+    child account itself via `sudo -u` before invoking `omarchy-kids-pairing
+    serve`. Same auth_admin/wheel reasoning as override-unlock above.
+  -->
+  <action id="net.omarchykids.agent.repair-pairing">
+    <description>Re-open pairing with the Control Center</description>
+    <message>Authentication is required to re-open pairing with the Control Center</message>
+    <icon_name>security-high-symbolic</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/omarchy-kids/omarchy-kids-repair-helper</annotate>
+  </action>
 </policyconfig>
