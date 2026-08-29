@@ -23,6 +23,7 @@ mod qr;
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
 use proto::{Message, SecurePayload};
+use serde_json::json;
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -77,6 +78,12 @@ enum Command {
         /// network.
         #[arg(long)]
         key_out: PathBuf,
+        /// Skip the fingerprint confirmation prompt and confirm
+        /// automatically. For scripting/testing — a real Control Center
+        /// should show the fingerprint to the parent and only pass this
+        /// once they've actually confirmed it matches the child's screen.
+        #[arg(long, default_value_t = false)]
+        yes: bool,
     },
 }
 
@@ -97,7 +104,8 @@ fn main() -> Result<()> {
             code,
             comment,
             key_out,
-        } => pair(&host, port, &sid, &code, &comment, &key_out),
+            yes,
+        } => pair(&host, port, &sid, &code, &comment, &key_out, yes),
     }
 }
 
@@ -130,7 +138,14 @@ fn serve(
     let pairing_code = code::generate_pairing_code();
     let sid = code::generate_session_id();
     let hostname = local_hostname()?;
+    // Resolved once and reused for both the printed line and the QR payload
+    // below — the manual/QR fallback entry path is unusable without the
+    // parent being able to read this off the child's screen (it was
+    // previously only encoded in the QR image, never printed as text).
+    let host = local_ipv4().unwrap_or_else(|_| hostname.clone());
 
+    println!("Host:         {host}");
+    println!("Port:         {port}");
     println!("Pairing code: {pairing_code}");
     println!("Session:      {sid}");
     println!(
@@ -148,7 +163,7 @@ fn serve(
         .as_secs() as i64;
     let qr_payload = qr::QrPayload {
         v: 1,
-        host: local_ipv4().unwrap_or_else(|_| hostname.clone()),
+        host: host.clone(),
         port,
         sid: sid.clone(),
         code: pairing_code.clone(),
@@ -379,6 +394,7 @@ fn pair(
     code: &str,
     comment: &str,
     key_out: &PathBuf,
+    yes: bool,
 ) -> Result<()> {
     if key_out.exists() {
         bail!(
@@ -440,14 +456,44 @@ fn pair(
 
     println!("Paired with {hostname} (SSH port {ssh_port}).");
     println!("Key fingerprint: {fingerprint}");
-    println!(
-        "(A real Control Center would show this to the parent and wait for confirmation here —\
-         this reference client auto-confirms.)"
-    );
-    println!("Try: ssh -i {} -p {ssh_port} {hostname}", key_out.display());
 
-    let ack = proto::encrypt(&shared_key, &SecurePayload::Ack { confirmed: true })?;
+    let confirmed = if yes {
+        println!("(--yes passed, confirming without prompting.)");
+        true
+    } else {
+        print!("Does this match the fingerprint shown on the child's screen? [y/N] ");
+        std::io::stdout().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        matches!(answer.trim().to_lowercase().as_str(), "y" | "yes")
+    };
+
+    let ack = proto::encrypt(&shared_key, &SecurePayload::Ack { confirmed })?;
     proto::write_message(&mut writer, &ack)?;
+
+    if !confirmed {
+        // The server already installed the key before sending its Confirm
+        // message (see handle_connection/install_pubkey) — declining here
+        // tells it the parent didn't accept, but doesn't undo that install.
+        // Revoking it needs a separate, already-trusted channel (there
+        // isn't one yet at this point), so this is a known follow-up, not
+        // something this client can fix from here.
+        bail!(
+            "fingerprint not confirmed — pairing aborted (note: the key was already installed \
+             on the child; it is not automatically removed)"
+        );
+    }
+
+    println!("Try: ssh -i {} -p {ssh_port} {hostname}", key_out.display());
+    println!(
+        "PAIR_RESULT: {}",
+        json!({
+            "hostname": hostname,
+            "ssh_port": ssh_port,
+            "fingerprint": fingerprint,
+            "key_path": key_out.to_string_lossy(),
+        })
+    );
 
     Ok(())
 }

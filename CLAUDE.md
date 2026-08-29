@@ -104,8 +104,36 @@ is solid. Don't start scaffolding other tiers unless asked.
     autologin is single-account machine-wide, the real blocker); see the
     vault note's "Offene Frage: mehrere Kinder auf EINEM Rechner" tracking
     entry.
-- `control/` and `quickshell-plugin/` are still stubs/skeletons — no real
-  logic yet.
+- `control/` now has a real first slice, not just a stub: pairing.
+  Deliberate architecture decision (2026-08-29) — Control Center is C++,
+  but rather than reimplementing the already-verified SPAKE2 protocol in
+  C++, `control/gui/`'s `PairingDialog` drives `omarchy-kids-pairing pair`
+  as a subprocess (same "shell out to a trusted binary" pattern already
+  planned for `ssh`), reading its fingerprint line for a real parent
+  confirmation and a final `PAIR_RESULT` JSON line for the outcome — the
+  reference CLI's own auto-confirm was always meant as a stand-in for
+  exactly this dialog, now replaced. `control/core/`'s `HostRegistry`
+  persists paired children as TOML at
+  `~/.config/omarchy-kids-control/hosts.toml` (`tomlplusplus`, matches the
+  vault note's own data-model sketch). `MainWindow` is a minimal shell (a
+  host list plus "Pair a new child...") — the real dashboard (usage stats,
+  app unlocks, tier changes), the TUI frontend, and the headless polling
+  mode are all still not built. Verified with a real, complete round trip
+  against the dev VM: GUI → subprocess → SPAKE2 exchange → parent-confirmed
+  fingerprint → key installed in the child's `authorized_keys` → SSH login
+  through that key correctly restricted to `omarchy-kids-agent`. Two real
+  bugs found and fixed during that verification: a failed `QProcess::start`
+  (e.g. the binary missing from PATH) went unhandled and silently hung the
+  dialog forever (now handled via `errorOccurred`); retrying after a failed
+  attempt for the same child name collided with the stale key file the
+  first attempt had already written (now cleaned up before each attempt),
+  and a stale process from an abandoned attempt was never terminated,
+  risking a delayed reply landing on whatever attempt started next (now
+  killed before starting a new one). See `docs/agent-protocol.md`'s
+  "Pairing protocol" section for the `pair` CLI's own changes (interactive
+  confirmation replacing auto-confirm, `--yes` for scripting, host/port now
+  printed by `serve` so the manual-entry path is actually usable).
+  `quickshell-plugin/` is still a stub/skeleton — no real logic yet.
 - Not yet done: app installation as part of the package (nothing in the
   current line-up is installed by the package yet), the `omarkid-gcompris`
   fork itself, app-wrapper/time-tracking integration, locale implementation
