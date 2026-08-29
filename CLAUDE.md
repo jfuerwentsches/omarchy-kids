@@ -57,9 +57,18 @@ is solid. Don't start scaffolding other tiers unless asked.
     binding off, only `SUPER+SPACE` survives (→ the kiosk launcher)
   - `omarchy-kids-set-tier` — applies all of the above, plus masks
     `getty@tty2-6` (VT-switch lockdown) for this tier
-- `agent/` (issues #1-#15) is implemented, not a stub: `agent`/`agentd`/
-  `omarchy-kids-run`/`omarchy-kids-override-helper` — protocol, time
-  budgets, PIN override, packaging. See `docs/agent-protocol.md`.
+- `agent/` (issues #1-#15, plus #10 and #25 from the other two project
+  boards — see below) is implemented, not a stub: `agent`/`agentd`/
+  `omarchy-kids-run`/`omarchy-kids-override-helper`/
+  `omarchy-kids-repair-helper` — protocol, time budgets, PIN override,
+  production re-pairing trigger, packaging. See `docs/agent-protocol.md`.
+  Found and fixed along the way (2026-08-29): the pairing-installed
+  `authorized_keys` entry's `command=` restriction execs `omarchy-kids-agent`
+  with zero argv, ignoring `$SSH_ORIGINAL_COMMAND` — every remote command
+  (not just Control Center's new dashboard below) silently collapsed to a
+  usage error until `agent/src/main.rs` gained `effective_args()` to read it
+  back out. Prior pairing verification never caught this because it only
+  ever tested the SSH *login*, never a real remote command.
 - `setup-wizard/` (issues #16-#27 done so far, project board:
   [Pairing & Setup Wizard](https://github.com/users/jfuerwentsches/projects/3))
   also has real logic now, not just a stub:
@@ -89,23 +98,31 @@ is solid. Don't start scaffolding other tiers unless asked.
     prints its pairing code/QR straight to tty1, so no extra UI was
     needed. Deliberately best-effort: Control Center doesn't exist yet, so
     a skipped/timed-out/failed pairing just logs a warning and setup still
-    completes — re-pairing later is a manual re-run (#25, retry UX, is
-    intentionally not built here). Verified so far in the dev VM: account
+    completes — re-pairing later is now `omarchy-kids-agent repair-pairing`
+    (#25, see below), not a manual re-run of the wizard. Verified so far in
+    the dev VM: account
     detection, tier discovery, the UFW open/close functions, and a real
     `serve`/`pair` round trip over `sudo -u <child_user>` (correctly
     installed the key with correct ownership; `SIGINT` mid-`serve` exits
     non-zero as expected). Not yet verified: the `gum` prompts end-to-end,
     or the systemd unit against a real `omarchy-provision-owner.service`
     run (needs a fresh deferred-provisioning install). See its README.
-  - Not yet done: failed-pairing retry UX (#25); multi-child reuse (#28,
-    cross-machine, i.e. reuse between siblings' separate machines). A
-    related but separate question — multiple children sharing one
-    machine — was raised and intentionally deferred for now (SDDM
-    autologin is single-account machine-wide, the real blocker); see the
-    vault note's "Offene Frage: mehrere Kinder auf EINEM Rechner" tracking
-    entry.
-- `control/` now has a real first slice, not just a stub: pairing.
-  Deliberate architecture decision (2026-08-29) — Control Center is C++,
+  - Failed-pairing retry UX (#25) is now resolved: mDNS+QR stay live for the
+    whole pairing window (no sequential fallback needed) and a
+    skipped/timed-out/failed attempt just logs a warning, per above. The one
+    real gap it surfaced — re-triggering pairing later on a *production*
+    machine with no reachable shell — is closed by the new
+    `omarchy-kids-agent repair-pairing` (see `agent/` above). Multi-child
+    reuse (#28, cross-machine, i.e. reuse between siblings' separate
+    machines) was decided: the wizard runs fully independently per machine,
+    no shared defaults for now — revisit once Control Center holds
+    family-level state worth sharing. A related but separate question —
+    multiple children sharing one machine — was raised and intentionally
+    deferred for now (SDDM autologin is single-account machine-wide, the
+    real blocker); see the vault note's "Offene Frage: mehrere Kinder auf
+    EINEM Rechner" tracking entry.
+- `control/` now has real first slices, not just a stub: pairing and a
+  dashboard. Deliberate architecture decision (2026-08-29) — Control Center is C++,
   but rather than reimplementing the already-verified SPAKE2 protocol in
   C++, `control/gui/`'s `PairingDialog` drives `omarchy-kids-pairing pair`
   as a subprocess (same "shell out to a trusted binary" pattern already
@@ -115,10 +132,20 @@ is solid. Don't start scaffolding other tiers unless asked.
   exactly this dialog, now replaced. `control/core/`'s `HostRegistry`
   persists paired children as TOML at
   `~/.config/omarchy-kids-control/hosts.toml` (`tomlplusplus`, matches the
-  vault note's own data-model sketch). `MainWindow` is a minimal shell (a
-  host list plus "Pair a new child...") — the real dashboard (usage stats,
-  app unlocks, tier changes), the TUI frontend, and the headless polling
-  mode are all still not built. Verified with a real, complete round trip
+  vault note's own data-model sketch). `MainWindow` grew a first real
+  dashboard (2026-08-29, closes agent-project issue #10's cross-host half):
+  selecting a paired child polls it over SSH (new Qt-free
+  `control/core/AgentClient`, `omarchy-kids-agent status`/`report --json`,
+  execvp'd directly — no shell, since host/key values can come from LAN
+  pairing data) and shows tier/budget/unlocked-apps status plus a
+  security-events list; severe events fire a local `notify-send` on the
+  *parent's* computer. Polling runs off the GUI thread via `QThreadPool` +
+  a lifetime-safe `QMetaObject::invokeMethod` hop back. Still not built:
+  app-unlock/tier-switch controls, usage-stat charts, the TUI frontend, and
+  a headless polling mode (today only the currently-selected host is
+  polled, so a severe event on an unselected child won't notify until it's
+  selected again) — see `docs/agent-protocol.md`'s "Control Center's
+  dashboard" section. Verified with a real, complete round trip
   against the dev VM: GUI → subprocess → SPAKE2 exchange → parent-confirmed
   fingerprint → key installed in the child's `authorized_keys` → SSH login
   through that key correctly restricted to `omarchy-kids-agent`. Two real
@@ -134,10 +161,31 @@ is solid. Don't start scaffolding other tiers unless asked.
   confirmation replacing auto-confirm, `--yes` for scripting, host/port now
   printed by `serve` so the manual-entry path is actually usable).
   `quickshell-plugin/` is still a stub/skeleton — no real logic yet.
+- **Full real end-to-end verification done (2026-08-29, closes setup-wizard
+  issue #29):** not a stand-in — a fresh Omarchy VM, deferred-provisioning
+  install, `omarchy-kids-*` binaries/scripts/units injected onto its disk
+  offline (`qemu-nbd`, before its first real boot — `setup-wizard`/`tiers`
+  aren't packaged yet), then driven through the actual first-boot chain via
+  `virsh screenshot`/`send-key`: `omarchy-provision-owner.service` → our
+  chained `omarchy-kids-setup-wizard.service` (gum form, real tty1) →
+  bootstrap → `run_pairing`'s pairing window → paired from the host with
+  `omarchy-kids-pairing pair` → the real Control Center GUI, launched on
+  the parent's own desktop, showing the child online with live status.
+  Found and fixed two real gaps this surfaced: a binary-path mismatch
+  (`command=` hardcodes `/usr/bin/omarchy-kids-agent`; the binaries were
+  found at `/usr/local/bin` first) and a genuine pairing-protocol gap — the
+  child's username was never transmitted at all, so Control Center had no
+  way to know which account's `authorized_keys` held the paired key
+  (`AgentClient` was building `ssh host` instead of `ssh user@host`).
+  `SecurePayload::Confirm`, `PAIR_RESULT`, `HostEntry`/`hosts.toml`, and
+  `PairingDialog` all now carry `username`. See `docs/agent-protocol.md`'s
+  "End-to-end verification" section.
 - Not yet done: app installation as part of the package (nothing in the
   current line-up is installed by the package yet), the `omarkid-gcompris`
   fork itself, app-wrapper/time-tracking integration, locale implementation
-  (concept is written, not built).
+  (concept is written, not built — a maintainer note from 2026-08-29 also
+  flags that the setup wizard's language prompt should move to *first*,
+  once i18n is actually built, so later prompts render in it).
 
 ## Dev environment
 

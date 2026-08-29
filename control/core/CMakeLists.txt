@@ -2,6 +2,7 @@ find_package(tomlplusplus REQUIRED)
 
 add_library(omarchy-kids-control-core STATIC
     src/host_registry.cpp
+    src/agent_client.cpp
 )
 
 target_include_directories(omarchy-kids-control-core PUBLIC

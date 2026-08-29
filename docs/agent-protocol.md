@@ -18,6 +18,11 @@ implementing it.
   Every unlocked app launches through this instead of directly.
 - **`omarchy-kids-override-helper`** — the actual `pkexec` target for the PIN
   override path; never run directly.
+- **`omarchy-kids-repair-helper`** — the `pkexec` target for re-triggering
+  pairing on a production machine (issue #25); never run directly. Unlike
+  `override-helper`, runs as root (needs it to toggle the pairing UFW rule),
+  then drops to the child account itself via `sudo -u` before invoking
+  `omarchy-kids-pairing serve`. See "Pairing protocol" below.
 - **`omarchy-kids-pairing`** — belongs to the Pairing track (setup-wizard
   issues #21-#24), not the original 4-binary Agent project split above, but
   lives in this workspace since it's Rust and shares little with the
@@ -93,16 +98,36 @@ SIGKILL after a 5s grace) if agentd says it's no longer allowed.
   lead time (`pre_warning.lead_minutes`) of a cutoff. Mini tier shows a
   banner and attempts an acoustic cue (`canberra-gtk-play`), per the
   non-reader requirement in the parental-controls design note.
-- **Security-event severity threshold (issue #10).** 3 failed override
-  attempts for the same app within 5 minutes escalates an `override_failed`
-  event from routine to severe. Severe events get a local `notify-send`
-  right now; **cross-host delivery to the parent's computer is blocked on
-  the Control Center existing** (`control/` is still a stub — see root
-  `CLAUDE.md` "Status"). Routine events are only visible via `agent report`.
+- **Security-event severity threshold (issue #10), now closed.** 3 failed
+  override attempts for the same app within 5 minutes escalates an
+  `override_failed` event from routine to severe. Severe events get a local
+  `notify-send` on the child's own session; cross-host delivery to the
+  parent's computer is now handled by Control Center's dashboard (see
+  "Control Center's dashboard" below) — polls the selected host's `agent
+  report --week --json` on a timer and fires its own `notify-send` for any
+  severe event not already surfaced this session. Routine events are shown
+  passively in that same panel, matching the tiered-delivery design.
 - **Push-content (issue #13).** `Request::PushContent { content_type }` is
   reserved in the wire enum and rejected with a clear "not implemented yet"
   error — kept so the wire format doesn't need a second redesign once photo/
   playlist transfer (see the Roadmap/Spotify vault notes) actually lands.
+- **Found while building Control Center's dashboard, not yet exercised by
+  any prior verification: remote commands never actually reached agentd.**
+  The `command=` restriction in the pairing-installed `authorized_keys`
+  entry points straight at the `omarchy-kids-agent` binary
+  (`command="/usr/bin/omarchy-kids-agent"`, see `install_pubkey` in
+  `pairing/src/main.rs`) — sshd execs that with **zero** argv regardless of
+  what the client actually asked for (`ssh host status --json`), stashing
+  the real request in `$SSH_ORIGINAL_COMMAND` instead. Nothing read that
+  variable back out, so every remote invocation silently collapsed to a
+  bare `omarchy-kids-agent` (clap's "no subcommand given" usage error, exit
+  2) — prior verification only ever checked that the SSH *login* itself
+  worked, never a real remote command. Fixed in `agent/src/main.rs`'s new
+  `effective_args()`: when the process's own argv is empty (just argv[0]),
+  it re-parses from `$SSH_ORIGINAL_COMMAND` (via the `shlex` crate) instead.
+  Guarded to only kick in when argv is otherwise empty, so a local
+  invocation (`override`, `repair-pairing`) is never affected even if that
+  variable happens to be set for unrelated reasons.
 
 ## UFW SSH rule ownership (issue #18)
 
@@ -206,21 +231,137 @@ design. A skipped (Ctrl+C), timed-out, or failed attempt is logged as a
 warning by the wizard and setup completes anyway; the child machine is
 fully usable standalone without ever pairing.
 
-**Still open:** how a parent re-triggers pairing later on a *production*
-machine, without shell access. `omarchy-kids-pairing serve` has to run as
-the child account, but the child account has no reachable shell by design
-(that's the whole point of the kiosk lockdown) — the paired SSH channel
-itself can't be used to invoke it either, since its `command=` restriction
-only ever runs `omarchy-kids-agent`, and a machine that skipped pairing
-has no paired channel yet anyway. Root SSH exists only in the dev VM (see
-root CLAUDE.md, "dev-only convenience... unrelated to the production
-agent's `command=`-restricted key design") — not a real answer.
-`omarchy-kids-override-helper` shows the shape of a real fix (a `pkexec`
-target the child's live session can invoke, gated on the admin account's
-credentials, no full login needed) but today only covers the time-budget
-PIN override, not pairing. Likely needs an equivalent small local trigger
-once Control Center (or a comparable local UI) exists to drive it —
-tracked in setup-wizard issue #25.
+**Production re-pairing trigger (resolved, closes issue #25):**
+`omarchy-kids-agent repair-pairing`, run on the child computer itself (not
+over SSH — the paired channel's `command=` restriction only ever runs this
+same binary's regular subcommands, and a machine that skipped pairing has
+no paired channel yet anyway). Same "PIN entry at the child's computer"
+shape as `override`/`omarchy-kids-override-helper`: `pkexec` gates it on
+the `net.omarchykids.agent.repair-pairing` polkit action (`auth_admin` —
+the separate parent/admin account, no full login needed), then runs
+`omarchy-kids-repair-helper`. One deliberate difference from
+`override-helper`: this helper runs as **root** (no `--user` on the
+`pkexec` call), not the child account, because it also needs to toggle the
+pairing UFW rule — root opens the rule, drops to the child account via
+`sudo -u` to run `omarchy-kids-pairing serve` (mirroring the wizard's own
+`run_pairing`/`sudo -u "$child_user"` pattern exactly), then always closes
+the rule on the way out, success or not. A skipped/timed-out/failed
+re-pairing attempt is reported to the parent (pkexec's exit code is
+propagated) but not logged as a security event — unlike a failed PIN
+override, it isn't gated on secret knowledge an attacker could brute-force
+from elsewhere, so issue #10's severity escalation doesn't apply here.
+Not yet wired into any UI trigger (a Quickshell-plugin button, say) — like
+`override`'s own CLI, that's left for whichever kiosk-side UI ends up
+calling it; `quickshell-plugin/` is still a stub (see root CLAUDE.md
+"Status").
+
+## Control Center's dashboard (issue #10's cross-host half)
+
+`control/gui/`'s `MainWindow` grew from a bare host list into a first real
+dashboard: selecting a paired child polls it over SSH (`control/core/`'s new
+`AgentClient`, running `omarchy-kids-agent status --json` and `report --week
+--json`) and shows tier/unlocked-apps/budget status plus a security-events
+list, newest first. Severe events fire a local `notify-send` on the
+*parent's* computer — the missing half of issue #10's tiered delivery
+(agentd's own `notify-send` only ever reached the child's own session).
+
+A few decisions worth recording:
+
+- **`AgentClient` lives in `control/core` (Qt-free), not `control/gui`** —
+  same reasoning as `HostRegistry`: `control/tui/` is meant to share this
+  logic once it's more than a placeholder, so nothing SSH-specific belongs
+  in the Qt-only layer.
+- **execvp, not a shell.** `AgentClient::run` forks and `execvp`s `ssh`
+  directly with an argv array instead of building a shell command string —
+  `HostEntry::hostname`/`keyPath` can originate from LAN-discovered pairing
+  data or manual entry, so this must never let their contents be
+  interpreted as shell syntax.
+- **Polling is synchronous but off the GUI thread.** `AgentClient::run`
+  blocks for up to its timeout (SSH's own `ConnectTimeout=5` plus a
+  wall-clock watchdog as a fail-safe); `MainWindow` runs it on
+  `QThreadPool` and hops back via `QMetaObject::invokeMethod`'s
+  context-object overload, which safely drops the call if the window was
+  closed while a poll was in flight.
+- **Notification bootstrap, not full history replay.** The first poll of a
+  session for a given host only records the newest severe event's
+  timestamp — it doesn't fire a notification for it. Otherwise every
+  pre-existing severe event in a child's history would notify the instant
+  Control Center opens, which is noise, not a real-time alert.
+- **Found while wiring this up, not a Control Center bug: remote agent
+  commands never actually reached agentd before this session.** See the
+  new "Design decisions" bullet above (`effective_args()`/
+  `$SSH_ORIGINAL_COMMAND`) — without that fix, `AgentClient::run`'s
+  `status`/`report` calls would have silently gotten clap's "no subcommand
+  given" usage error back instead of real data.
+
+**Not yet done:** only the currently *selected* host is polled — there is
+still no headless polling mode (see root CLAUDE.md "Status"), so a severe
+event on a paired-but-unselected child won't notify until that child is
+selected again. Host-key verification is plain TOFU (`StrictHostKeyChecking
+=accept-new`), not pinned to the SPAKE2-confirmed fingerprint pairing
+already established. App-unlock and tier-switch controls, and any actual
+usage-stat charts, are still not built — this dashboard is read-only.
+
+## End-to-end verification (issue #29, closed 2026-08-29)
+
+The real thing, not a stand-in: a fresh Omarchy VM, deferred-provisioning
+install (Ctrl+C at the keyboard-layout screen), `omarchy-kids-agent`/
+`agentd`/`pairing`/the setup-wizard scripts/`omarchy-kids-setup-wizard.service`
+injected onto its disk offline (via `qemu-nbd`, no packaging exists for
+`setup-wizard`/`tiers` yet — see their READMEs) *before* its first real
+boot, then booted for real and driven through the actual first-boot chain
+via `virsh screenshot`/`send-key` (no manual `serve` invocation, no
+synthetic test harness):
+
+`omarchy-provision-owner.service` (Omarchy's own deferred account setup) →
+our chained `omarchy-kids-setup-wizard.service` (gum form: name/tier/
+language, on the same tty1) → `omarchy-kids-bootstrap` (parent/admin
+account, wheel removal, branding, `omarchy-kids-set-tier mini`) →
+`run_pairing`'s UFW-wrapped `omarchy-kids-pairing serve` window (mDNS + QR
++ code, genuinely printed to tty1) → paired from the *host* against that
+real window with `omarchy-kids-pairing pair` → a real Control Center
+(`control/gui/omarchy-kids-control`, launched for real on the parent's own
+Wayland session, not headless) polling the newly-paired child over SSH and
+showing it online with live tier/budget/security-event data.
+
+**Two real, previously-unverified gaps found and fixed by actually running
+this, not by re-reading the code:**
+
+1. **Binary path mismatch.** The pairing-installed `command=` restriction
+   hardcodes `/usr/bin/omarchy-kids-agent` (matching the real, still-unused
+   `PKGBUILD`) — the dev injection had put the binaries at `/usr/local/bin`
+   for expedience, so the very first `ssh ... status` attempt failed with
+   "No such file or directory" despite pairing itself having succeeded.
+   Fixed by placing them at `/usr/bin` to match what packaging already
+   assumes.
+2. **The pairing protocol never transmitted the child's username — a real
+   protocol gap, not a test artifact.** `SecurePayload::Confirm` (see
+   "Pairing protocol" above) carried `hostname`/`ssh_port`/`fingerprint`
+   but not `username`; `HostEntry` had nowhere to store one either. Since
+   the child account's name is chosen freely during Omarchy's own account
+   setup and was never otherwise communicated, Control Center had no way
+   to know which account's `authorized_keys` the freshly paired key lived
+   in — `AgentClient::run` was building bare `ssh host ...` instead of
+   `ssh user@host ...`, which authenticates as whatever *local* account
+   Control Center itself runs under instead (worked by pure coincidence
+   never — my own manual first test only "worked" because I already knew
+   the username from having driven the wizard myself moments earlier).
+   Fixed end-to-end: `serve` now reports its own `$USER`/`LOGNAME` in
+   `Confirm`; `pair` surfaces it in `PAIR_RESULT` and its printed `ssh -i
+   ... user@host` hint; `HostEntry`/`hosts.toml` gained a `username`
+   field; `PairingDialog` stores it; `AgentClient` connects to `user@host`.
+   Verified with a second real `serve`/`pair` round trip (host-to-host,
+   not through the VM) confirming `PAIR_RESULT` now includes the correct
+   username, then re-verified the VM dashboard poll actually working with
+   a corrected `hosts.toml` entry.
+
+Confirms, for the first time against a real deferred-provisioning boot
+rather than a manually-driven one: Omarchy 4 has no first-boot hook API of
+its own (issue #26's research), so systemd unit ordering really is
+sufficient to chain onto it; the mini tier's SDDM-autologin-permanence fix
+takes effect correctly on a genuinely fresh unencrypted install; and the
+full pairing→Control-Center chain works against a real child, not a
+stand-in `pair` invocation on the same box.
 
 ## Not yet done
 

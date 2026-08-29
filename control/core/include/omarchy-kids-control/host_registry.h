@@ -13,6 +13,11 @@ struct HostEntry {
     std::string name;        // parent-chosen label, e.g. the child's name
     std::string hostname;    // host/IP to SSH to
     int sshPort = 22;
+    std::string username;    // child account to SSH as (chosen freely during
+                              // Omarchy's own account setup, reported back by
+                              // `serve`'s Confirm payload during pairing —
+                              // without it there's no way to know whose
+                              // authorized_keys the paired key lives in)
     std::string keyPath;     // private key path (public half is <keyPath>.pub)
     std::string fingerprint; // SHA256 fingerprint shown/confirmed at pairing time
     std::string pairedAt;    // ISO 8601 timestamp

@@ -185,6 +185,7 @@ void PairingDialog::handleStdout() {
             entry.name = nameEdit_->text().trimmed().toStdString();
             entry.hostname = obj.value("hostname").toString().toStdString();
             entry.sshPort = obj.value("ssh_port").toInt(22);
+            entry.username = obj.value("username").toString().toStdString();
             entry.keyPath = obj.value("key_path").toString().toStdString();
             entry.fingerprint = obj.value("fingerprint").toString().toStdString();
             entry.pairedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODate).toStdString();

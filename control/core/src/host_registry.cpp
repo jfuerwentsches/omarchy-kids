@@ -55,6 +55,7 @@ void HostRegistry::load() {
         entry.name = (*t)["name"].value_or("");
         entry.hostname = (*t)["hostname"].value_or("");
         entry.sshPort = (*t)["ssh_port"].value_or(22);
+        entry.username = (*t)["username"].value_or("");
         entry.keyPath = (*t)["key_path"].value_or("");
         entry.fingerprint = (*t)["fingerprint"].value_or("");
         entry.pairedAt = (*t)["paired_at"].value_or("");
@@ -71,6 +72,7 @@ void HostRegistry::save() const {
         t.insert("name", h.name);
         t.insert("hostname", h.hostname);
         t.insert("ssh_port", h.sshPort);
+        t.insert("username", h.username);
         t.insert("key_path", h.keyPath);
         t.insert("fingerprint", h.fingerprint);
         t.insert("paired_at", h.pairedAt);
