@@ -121,6 +121,26 @@ if [[ -f "$TIER_DIR/hypr/hyprland.lua" ]]; then
   hyprctl reload >/dev/null 2>&1 || true
 fi
 
+# First-run replacement (issue #30), if this tier ships one: Omarchy's own
+# first-run orchestrator is all prompts an adult should see (system update,
+# keybinding cheatsheet, dictation/fingerprint/default-agent invitations) and
+# has no per-step toggle, only the one all-or-nothing "first-run-user"
+# done-marker. Install the tier's autostart.lua (which replicates just the
+# few silent, non-prompt steps worth keeping — see tiers/mini/hypr/
+# autostart.lua) and mark that done-marker ourselves, BEFORE the child's
+# first graphical login, so Omarchy's own handler finds it already done and
+# never shows any of those prompts.
+if [[ -f "$TIER_DIR/hypr/autostart.lua" ]]; then
+  AUTOSTART_CONF="$HOME/.config/hypr/autostart.lua"
+  AUTOSTART_BACKUP="$AUTOSTART_CONF.pre-omarchy-kids"
+  if [[ -f $AUTOSTART_CONF && ! -f $AUTOSTART_BACKUP ]]; then
+    cp "$AUTOSTART_CONF" "$AUTOSTART_BACKUP"
+  fi
+  cp "$TIER_DIR/hypr/autostart.lua" "$AUTOSTART_CONF"
+  omarchy-done mark first-run-user
+  hyprctl reload >/dev/null 2>&1 || true
+fi
+
 # VT lockdown: this tier has no terminal, so Ctrl+Alt+F<n> switching to a
 # raw getty and logging back in with the same account must not work either
 # — the kiosk restriction is a UI-layer thing otherwise, not an access

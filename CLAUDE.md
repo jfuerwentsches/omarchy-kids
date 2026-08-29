@@ -180,6 +180,19 @@ is solid. Don't start scaffolding other tiers unless asked.
   `SecurePayload::Confirm`, `PAIR_RESULT`, `HostEntry`/`hosts.toml`, and
   `PairingDialog` all now carry `username`. See `docs/agent-protocol.md`'s
   "End-to-end verification" section.
+- **Issue #30 fixed (2026-08-30):** the mini-tier kiosk was showing Omarchy's
+  generic first-login onboarding — found this covers more than the two
+  notifications originally reported: `omarchy-provision-first-run`'s whole
+  sequence is adult-facing prompts (System-Update, Learn-Keybindings,
+  Setup-Wi-Fi, plus post-update invitations for Voxtype/fingerprint/default-
+  agent setup) except for four silent steps, with no per-step toggle — only
+  one all-or-nothing done-marker. New `tiers/mini/hypr/autostart.lua`,
+  installed by `omarchy-kids-set-tier` alongside `hyprland.lua`: marks that
+  done-marker itself before the child's first graphical login (so none of
+  Omarchy's prompts ever fire) and replicates only the four worth-keeping
+  silent steps by calling Omarchy's own scripts directly, in the real
+  Hyprland session where they actually work (unlike the wizard's pre-session
+  tty1 context). See `tiers/README.md`'s "Status" section.
 - Not yet done: app installation as part of the package (nothing in the
   current line-up is installed by the package yet), the `omarkid-gcompris`
   fork itself, app-wrapper/time-tracking integration, locale implementation
