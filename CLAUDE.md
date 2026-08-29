@@ -193,6 +193,25 @@ is solid. Don't start scaffolding other tiers unless asked.
   silent steps by calling Omarchy's own scripts directly, in the real
   Hyprland session where they actually work (unlike the wizard's pre-session
   tty1 context). See `tiers/README.md`'s "Status" section.
+- **CI added (2026-08-30):** first `.github/workflows/ci.yml` — `agent/`
+  (cargo build/clippy/test, verified clean), `control/` (CMake/Ninja/Qt6/
+  tomlplusplus build), and shellcheck/`luac` lint over the shell scripts and
+  tiers' Hyprland Lua configs. All fast, no VM. Separately, the slow part of
+  local dev-loop iteration — reinstalling the dev VM from ISO and manually
+  replaying the pairing round trip via `virsh screenshot`/`send-key` — now
+  has two faster stand-ins in `scripts/`: `vm-snapshot.sh` (internal qcow2
+  snapshot/revert, so a test pass doesn't need a fresh install) and
+  `vm-pairing-smoke-test.sh` (scripts the pairing protocol round trip via
+  the reference `pair --yes` CLI and checks the machine-readable
+  `PAIR_RESULT:` line instead of eyeballing screenshots). Found along the
+  way: the dev VM's default raw-format NVRAM (from `virt-install --boot
+  uefi`) rejects `virsh snapshot-create-as` outright — `docs/dev-vm-setup.md`
+  §4 now requests qcow2 NVRAM for new VMs; migrating the existing VM is
+  documented there but not verified this session. Neither script replaces
+  the full from-ISO end-to-end test (`docs/agent-protocol.md`'s "End-to-end
+  verification") — console-form keystroke automation is too fragile to lean
+  on exclusively — they speed up iterating on the pairing protocol itself.
+  See `docs/dev-vm-setup.md`'s "Fast iteration" section.
 - Not yet done: app installation as part of the package (nothing in the
   current line-up is installed by the package yet), the `omarkid-gcompris`
   fork itself, app-wrapper/time-tracking integration, locale implementation

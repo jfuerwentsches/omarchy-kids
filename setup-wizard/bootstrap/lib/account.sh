@@ -7,6 +7,7 @@
 # rights instead, so the PIN/polkit override path (agent issue #9) has
 # something meaningful to authenticate against. Naming convention: follows
 # every other omarchy-kids-* binary/account name in this repo.
+# shellcheck disable=SC2034  # consumed by omarchy-kids-bootstrap, which sources this file
 OMARCHY_KIDS_ADMIN_USER_DEFAULT="omarchy-kids-parent"
 
 # create_parent_admin_account <child_user> <admin_user> <admin_password>

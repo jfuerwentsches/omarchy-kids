@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  agent:
+    name: agent (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent
+
+      - run: cargo build --workspace --all-targets
+        working-directory: agent
+
+      # Clippy is clean today (verified 2026-08-30) — kept as a hard gate so
+      # it stays that way. cargo fmt is deliberately NOT gated here: the
+      # existing code predates a repo-wide fmt pass, and reformatting it is
+      # a separate, unrelated cleanup, not part of standing up CI.
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+        working-directory: agent
+
+      - run: cargo test --workspace
+        working-directory: agent
+
+  control:
+    name: control (CMake/Qt6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build qt6-base-dev libtomlplusplus-dev
+
+      - run: cmake -S control -B control/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build control/build
+
+  lint-shell:
+    name: shell scripts (shellcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+
+      # Verified clean end to end (2026-08-30). The bootstrap lib/*.sh files
+      # are sourced, not executed, so they need --shell=bash (shellcheck
+      # can't infer a shell from a file with no shebang) and -x from inside
+      # setup-wizard/bootstrap so the relative `source` paths resolve.
+      - run: |
+          shellcheck --shell=bash \
+            scripts/vm-type-de.sh \
+            scripts/vm-snapshot.sh \
+            scripts/vm-pairing-smoke-test.sh \
+            tiers/omarchy-kids-set-tier \
+            setup-wizard/first-boot/omarchy-kids-setup-wizard
+          cd setup-wizard/bootstrap
+          shellcheck --shell=bash -x omarchy-kids-bootstrap lib/*.sh
+
+  lint-lua:
+    name: Hyprland Lua configs (luac)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends lua5.4
+
+      - run: find tiers -name '*.lua' -print0 | xargs -0 -n1 luac5.4 -p

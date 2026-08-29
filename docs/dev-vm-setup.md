@@ -76,7 +76,7 @@ sudo virt-install \
   --network network=default,model=virtio \
   --graphics spice \
   --video virtio \
-  --boot uefi \
+  --boot uefi,nvram.templateFormat=qcow2 \
   --features smm=off \
   --noautoconsole \
   --wait -1
@@ -85,7 +85,10 @@ sudo virt-install \
 Adjust `--memory`/`--vcpus` to the host's headroom (`free -h`) — 6GB/4 vCPUs
 assumes an 8-16GB host that's also running other things. UEFI without
 secure boot (`--boot uefi`, no secboot vars) and `smm=off` matches Omarchy's
-own requirement to have Secure Boot/TPM disabled.
+own requirement to have Secure Boot/TPM disabled. `nvram.templateFormat=qcow2`
+is there so `virsh snapshot-create-as` (see "Fast iteration" below) works
+out of the box — libvirt's default raw NVRAM format rejects internal
+snapshots outright (found 2026-08-30, see "Known gotchas").
 
 ## 5. Install (interactive — this part you drive yourself)
 
@@ -209,6 +212,41 @@ Needs the firewall fix from §2 (internet access) already in place. Once
 installed, `Ctrl+Shift+V` works normally between host and the
 `virt-manager` console window.
 
+## Fast iteration: snapshots + a scripted pairing round trip
+
+Sections 3-7 above (fresh ISO install through first SSH access) take real
+wall-clock time and, worse, a chunk of it (§5) is interactive — fine once,
+tedious every time you want to re-test the setup wizard or a pairing change.
+Two scripts in `scripts/` cut that down for the parts that don't need a
+truly fresh install:
+
+- **`scripts/vm-snapshot.sh save|restore|list [name]`** — wraps `virsh
+  snapshot-create-as`/`snapshot-revert`, an internal qcow2 snapshot of the
+  whole VM (disk + NVRAM). Take one right after §7 (`save fresh-boot`, VM
+  shut off) — account created, network/SSH working, nothing else touched —
+  then `restore fresh-boot` before each test pass instead of reinstalling.
+  Needs the qcow2 NVRAM format from §4; see "Known gotchas" below if this
+  errors on an older VM.
+- **`scripts/vm-pairing-smoke-test.sh <host> <user>`** — automates "playing
+  through the pairing" against a VM that already has `omarchy-kids-agent`/
+  `omarchy-kids-pairing` on PATH (i.e. past `omarchy-kids-bootstrap`, see
+  the "Quick reference" section below): starts `omarchy-kids-pairing serve`
+  on the child over SSH, dials in with the reference `pair --yes` CLI
+  instead of the real Control Center GUI, and checks the machine-readable
+  `PAIR_RESULT:` line plus a live `agent status` call through the freshly
+  installed key — no `virsh screenshot` eyeballing needed.
+
+This does **not** replace the full from-ISO test in `docs/agent-protocol.md`'s
+"End-to-end verification" section (driven via `virsh screenshot`/`send-key`
+through the real tty1 `gum` form) — blind keystroke automation of an
+interactive console form is exactly the kind of thing that's fragile (see
+the idle-lock gotcha below), so that full chain is still worth re-running by
+hand periodically, especially after touching `setup-wizard/first-boot/`.
+The two scripts above are a fast, scriptable stand-in for the *pairing
+protocol* specifically, for iterating on `agent/pairing/` or
+`control/gui/PairingDialog` without redoing the account/tier setup every
+time.
+
 ## Known gotchas, collected
 
 - **UFW blocks things at three independent layers**: host-INPUT (DHCP/SSH
@@ -246,6 +284,24 @@ installed, `Ctrl+Shift+V` works normally between host and the
   unlock it (no known password to type). Either disable the idle
   lock/timeout for the dev VM, or keep unlocking it yourself when it
   matters mid-session.
+- **`virsh snapshot-create-as` refuses a VM with the default raw NVRAM
+  format**: "internal snapshots of a VM with pflash based firmware require
+  QCOW2 nvram format" (hit against the real dev VM, 2026-08-30 — check
+  yours with `virsh dumpxml <domain> | grep nvram`; stock `virt-install
+  --boot uefi` produces `format='raw'`). §4's `virt-install` command now
+  requests `nvram.templateFormat=qcow2` for new VMs. An existing raw-NVRAM
+  VM needs a one-time migration (VM shut off):
+  ```bash
+  sudo qemu-img convert -O qcow2 \
+    /var/lib/libvirt/qemu/nvram/<domain>_VARS.fd \
+    /var/lib/libvirt/qemu/nvram/<domain>_VARS.qcow2.fd
+  sudo virt-xml <domain> --edit --boot nvram=/var/lib/libvirt/qemu/nvram/<domain>_VARS.qcow2.fd,nvram.templateFormat=qcow2
+  ```
+  Not verified against a real VM in this session (didn't want to shut down
+  the in-progress dev VM to test it) — verify the round trip (`virsh
+  snapshot-create-as`, revert, boot) works before relying on it, or just
+  recreate the VM with the updated §4 command instead, since this whole
+  document already treats the VM as throwaway.
 
 ## Quick reference: iterating on `tiers/`
 
@@ -255,4 +311,9 @@ ssh omarchy-kids-child "chmod +x ~/omarchy-kids-tiers/omarchy-kids-set-tier && ~
 
 # Visual check without touching the VM's own input:
 sudo virsh screenshot omarchy-kids-child /tmp/check.png
+
+# Fast pairing iteration (see "Fast iteration" above) — revert to a
+# pre-pairing snapshot, then run the round trip against it:
+./scripts/vm-snapshot.sh restore fresh-boot
+./scripts/vm-pairing-smoke-test.sh 192.168.122.109 <child_user>
 ```
