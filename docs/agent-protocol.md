@@ -146,16 +146,43 @@ explicit retry action (see setup-wizard issue #25), not something a remote
 attacker can trigger unassisted. Verified end-to-end in the dev VM
 (2026-08-29), including SSH login through the freshly paired key.
 
-**Found while verifying, not yet resolved:** the pairing port (7420 by
-convention) has no UFW rule — correctly so, since it must be open only for
-the deliberate pairing window, not permanently (same "SSH is the only open
-door" principle the getty-lockdown fix in setup-wizard issue #16 already
-leans on). Nothing opens/closes that rule around a `serve` invocation yet;
-verification above worked around it with a manual `ufw allow` on the dev
-VM. That belongs to whichever component actually drives the wizard's
-pairing step (setup-wizard issues #22/#23, not built yet) — most likely as
-a narrow NOPASSWD sudoers grant for that one port, mirroring
-`grant_getty_lockdown_sudo` in `setup-wizard/bootstrap/lib/account.sh`.
+**UFW rule around the pairing window (resolved, setup-wizard issues
+#22/#23):** the pairing port (7420 by convention) has no standing UFW rule
+— correctly so, since it must be open only for the deliberate pairing
+window, not permanently (same "SSH is the only open door" principle the
+getty-lockdown fix in setup-wizard issue #16 already leans on). The
+first-boot wizard (`setup-wizard/first-boot/omarchy-kids-setup-wizard`,
+`run_pairing`) now opens/closes that rule directly around its `serve`
+call — no sudoers workaround needed like `grant_getty_lockdown_sudo`,
+since the wizard already runs as root at that point (unlike the getty-mask
+case, where the *child* account has to issue the privileged command
+later). Verified in the dev VM (2026-08-29): rule appears/disappears
+correctly, and a real `serve`/`pair` round trip over the wizard's own
+`sudo -u <child_user>` invocation pattern installed the key correctly.
+
+**Retry/skip behavior (setup-wizard issue #25, mostly resolved by how
+`serve` already works, one real gap remains):** mDNS and the QR code are
+both live for the whole pairing window — not a sequential "mDNS first, QR
+as fallback after a timeout" — so there's no separate fallback state to
+design. A skipped (Ctrl+C), timed-out, or failed attempt is logged as a
+warning by the wizard and setup completes anyway; the child machine is
+fully usable standalone without ever pairing.
+
+**Still open:** how a parent re-triggers pairing later on a *production*
+machine, without shell access. `omarchy-kids-pairing serve` has to run as
+the child account, but the child account has no reachable shell by design
+(that's the whole point of the kiosk lockdown) — the paired SSH channel
+itself can't be used to invoke it either, since its `command=` restriction
+only ever runs `omarchy-kids-agent`, and a machine that skipped pairing
+has no paired channel yet anyway. Root SSH exists only in the dev VM (see
+root CLAUDE.md, "dev-only convenience... unrelated to the production
+agent's `command=`-restricted key design") — not a real answer.
+`omarchy-kids-override-helper` shows the shape of a real fix (a `pkexec`
+target the child's live session can invoke, gated on the admin account's
+credentials, no full login needed) but today only covers the time-budget
+PIN override, not pairing. Likely needs an equivalent small local trigger
+once Control Center (or a comparable local UI) exists to drive it —
+tracked in setup-wizard issue #25.
 
 ## Not yet done
 
