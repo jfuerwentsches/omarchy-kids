@@ -1,0 +1,170 @@
+#!/bin/bash
+# The first-boot hook itself (issue #27, Phase 2 of the vault note's
+# "Omarchy Kids - Implementierung Setup-Wizard"). Run by
+# omarchy-kids-setup-wizard.service on tty1, right after Omarchy's own
+# omarchy-provision-owner has created the child's Linux account and handed
+# off — but before display-manager.service starts, so there is still no
+# graphical session and no third-party UI toolkit available. Asks the
+# parent three questions with `gum` (same tool Omarchy's own first-boot
+# form uses, see /usr/share/omarchy/install/provisioning/setup-form.sh),
+# then drives the already-built omarchy-kids-bootstrap (see
+# setup-wizard/bootstrap/).
+#
+# Deliberately a simple form, not a kid-friendly UI — the audience here is
+# the parent doing the one-time setup (see issue #27).
+#
+# Must run as root: reads/writes systemd unit state and calls
+# omarchy-kids-bootstrap, which itself requires root.
+set -euo pipefail
+
+MARKER_DIR=/var/lib/omarchy-kids/setup-wizard
+MARKER_FILE="$MARKER_DIR/done"
+LANGUAGE_FILE="$MARKER_DIR/child-language"
+PROMPT_COLOR="#845DF9"
+
+if [[ $EUID -ne 0 ]]; then
+  echo "omarchy-kids-setup-wizard must run as root" >&2
+  exit 1
+fi
+
+# Re-running after a completed setup (e.g. by hand in the dev VM) is a
+# deliberate no-op rather than a second bootstrap pass — the systemd unit's
+# own ConditionPathExists already skips this at the service level, but the
+# script stays safe called directly too.
+if [[ -f $MARKER_FILE ]]; then
+  echo "omarchy-kids-setup-wizard: already completed (see $MARKER_FILE), nothing to do" >&2
+  exit 0
+fi
+
+# detect_child_user
+#
+# Omarchy's own first-boot (omarchy-provision-owner) already created the
+# child's account by the time this runs — deferred provisioning guarantees
+# exactly one such account exists at this point. Can't reuse
+# /var/lib/omarchy/provisioning/setup-user: that file (like the `pending`
+# flag) is deleted by omarchy-provision-owner's own cleanup before it hands
+# off, so it's already gone here. Detect instead via the standard
+# UID_MIN/UID_MAX human-account range from /etc/login.defs (Arch default
+# 1000-60000), which is what `useradd` itself used to create the account.
+detect_child_user() {
+  local uid_min uid_max candidates count
+  uid_min="$(awk '$1=="UID_MIN"{print $2}' /etc/login.defs 2>/dev/null || true)"
+  uid_max="$(awk '$1=="UID_MAX"{print $2}' /etc/login.defs 2>/dev/null || true)"
+  uid_min="${uid_min:-1000}"
+  uid_max="${uid_max:-60000}"
+
+  candidates="$(awk -F: -v lo="$uid_min" -v hi="$uid_max" \
+    '$3 >= lo && $3 <= hi && $1 != "nobody" { print $1 }' /etc/passwd)"
+  count="$(grep -c . <<<"$candidates" || true)"
+
+  if [[ $count -eq 0 ]]; then
+    echo "omarchy-kids-setup-wizard: no candidate child account found (UID $uid_min-$uid_max) — expected Omarchy's own first-boot to have created exactly one already" >&2
+    return 1
+  elif [[ $count -gt 1 ]]; then
+    echo "omarchy-kids-setup-wizard: found more than one candidate child account, refusing to guess: $candidates" >&2
+    return 1
+  fi
+
+  printf '%s' "$candidates"
+}
+
+# discover_tiers
+#
+# Same resolution omarchy-kids-set-tier uses on itself (sibling `*/themes`
+# directories next to its own, symlink-resolved, location) — reused here
+# rather than re-implemented, so a tier only has to be added in one place.
+# tiers/ isn't packaged yet (see tiers/README.md); this assumes
+# omarchy-kids-set-tier is already on PATH, the same assumption
+# setup-wizard/bootstrap/lib/branding-tier.sh already makes.
+discover_tiers() {
+  local bin resolved dir tier found=0
+  bin="$(command -v omarchy-kids-set-tier)" || {
+    echo "omarchy-kids-setup-wizard: omarchy-kids-set-tier not found on PATH" >&2
+    return 1
+  }
+  resolved="$(readlink -f "$bin")"
+  dir="$(dirname "$resolved")"
+
+  for tier_themes in "$dir"/*/themes; do
+    [[ -d $tier_themes ]] || continue
+    tier="$(basename "$(dirname "$tier_themes")")"
+    echo "$tier"
+    found=1
+  done
+
+  [[ $found -eq 1 ]] || {
+    echo "omarchy-kids-setup-wizard: no tiers found next to omarchy-kids-set-tier ($dir)" >&2
+    return 1
+  }
+}
+
+ask_child_name() {
+  local name
+  while true; do
+    name=$(gum input --placeholder "e.g. Fine" --prompt.foreground="$PROMPT_COLOR" --prompt "Child's name> ") && break
+    echo "A name is required to continue." >&2
+  done
+  printf '%s' "$name"
+}
+
+# ask_tier <available tiers, one per line>
+ask_tier() {
+  local tiers="$1" tier
+  # A single available tier (the current state — only "mini" is built, see
+  # root CLAUDE.md) still goes through gum choose rather than being
+  # auto-picked: keeps the form's behavior identical once more tiers exist,
+  # nothing to special-case later.
+  tier=$(gum choose --header "Initial age tier" <<<"$tiers") && printf '%s' "$tier"
+}
+
+# ask_language
+#
+# Locale implementation is concept-only, not built yet (vault note "Omarchy
+# Kids - Sprache und Locales") — nothing consumes this today. Collected
+# anyway because issue #27 asks for it, and stashed to a plain state file
+# for that future work to read rather than wired into anything now.
+ask_language() {
+  local language
+  language=$(gum choose --header "Language / Sprache" <<<$'de\nen') && printf '%s' "$language"
+}
+
+# disable_autologin_once_cleanup
+#
+# Omarchy's own first-boot (omarchy-provision-owner, see
+# install_autologin_once_cleanup() in omarchy-provision-owner) installs a
+# one-shot service that removes /etc/sddm.conf.d/autologin.conf on the
+# NEXT boot for unencrypted installs, so a normal install doesn't leave the
+# disk permanently auto-unlocked past the owner's first login. For
+# omarchy-kids that's the wrong default: the mini tier's whole security
+# model is "no reachable login prompt" (root CLAUDE.md, "Kiosk lockdown is
+# a UI-layer thing only, unless you also close the OS escape hatches") — a
+# 5-7 year old also can't type a login password, and a real SDDM greeter is
+# exactly the kind of escape hatch that principle already made us close
+# twice elsewhere (VT switch, the Omarchy top bar menu). So autologin needs
+# to stay permanent here the same way it already does for encrypted
+# installs. Removing the cleanup unit (mirrors how
+# omarchy-provision-owner's own cleanup_oem_state() disables itself) is a
+# no-op if it was never installed (encrypted installs skip it entirely).
+disable_autologin_once_cleanup() {
+  local unit=omarchy-provision-autologin-once.service
+  rm -f "/etc/systemd/system/graphical.target.wants/$unit" "/etc/systemd/system/$unit"
+  systemctl daemon-reload 2>/dev/null || true
+}
+
+CHILD_USER="$(detect_child_user)"
+TIERS="$(discover_tiers)"
+
+CHILD_NAME="$(ask_child_name)"
+TIER="$(ask_tier "$TIERS")"
+LANGUAGE="$(ask_language)"
+
+echo "omarchy-kids-setup-wizard: running bootstrap for '$CHILD_USER' (tier '$TIER')..." >&2
+omarchy-kids-bootstrap --child-user "$CHILD_USER" --child-name "$CHILD_NAME" --tier "$TIER"
+
+disable_autologin_once_cleanup
+
+mkdir -p "$MARKER_DIR"
+printf '%s\n' "$LANGUAGE" >"$LANGUAGE_FILE"
+date --iso-8601=seconds >"$MARKER_FILE"
+
+echo "omarchy-kids-setup-wizard: done." >&2

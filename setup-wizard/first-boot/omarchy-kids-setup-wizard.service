@@ -1,0 +1,38 @@
+# Runs the omarchy-kids parent-facing setup form right after Omarchy's own
+# first-boot owner provisioning finishes, before the display manager starts
+# (issue #27). Research (issue #26, see the vault note's "Recherche
+# Omarchy-4-First-Boot-Hook-API" tracking entry): Omarchy 4 has no official
+# first-boot extension point, so this integrates via systemd unit ordering
+# instead of a hook inside omarchy-provision-owner itself.
+#
+# Own idempotency marker rather than Omarchy's own provisioning/pending
+# flag: that flag, and /var/lib/omarchy/provisioning/setup-user with it, are
+# already removed by the time omarchy-provision-owner.service finishes (see
+# its cleanup_oem_state()) — can't be used as a condition here.
+#
+# Mirrors omarchy-provision-owner.service's tty1/display-manager handling
+# (see /usr/share/omarchy/install/provisioning/omarchy-provision-owner.service)
+# so the two run back-to-back on the same console with no flicker between
+# them.
+[Unit]
+Description=Omarchy Kids first-boot setup wizard
+ConditionPathExists=!/var/lib/omarchy-kids/setup-wizard/done
+After=omarchy-provision-owner.service
+Before=display-manager.service getty@tty1.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/bin/plymouth quit
+ExecStart=/usr/bin/omarchy-kids-setup-wizard
+StandardInput=tty
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+
+[Install]
+WantedBy=multi-user.target

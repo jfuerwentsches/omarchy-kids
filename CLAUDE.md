@@ -60,7 +60,7 @@ is solid. Don't start scaffolding other tiers unless asked.
 - `agent/` (issues #1-#15) is implemented, not a stub: `agent`/`agentd`/
   `omarchy-kids-run`/`omarchy-kids-override-helper` — protocol, time
   budgets, PIN override, packaging. See `docs/agent-protocol.md`.
-- `setup-wizard/` (issues #16-#26 done so far, project board:
+- `setup-wizard/` (issues #16-#27 done so far, project board:
   [Pairing & Setup Wizard](https://github.com/users/jfuerwentsches/projects/3))
   also has real logic now, not just a stub:
   - `setup-wizard/bootstrap/` — Phase 1 scripted bootstrap (account/wheel
@@ -71,12 +71,29 @@ is solid. Don't start scaffolding other tiers unless asked.
     Control-Center pairing exchange (mDNS + QR discovery, SPAKE2-
     authenticated key handoff), verified over a real network in the dev
     VM. See `docs/agent-protocol.md`'s "Pairing protocol" section.
-  - Not yet done: the actual first-boot hook wiring the bootstrap script
-    into Omarchy's provisioning flow, and the parent-facing setup form
-    (issue #27 — the hook API itself is researched/documented, just not
-    built); the wizard step that actually invokes pairing with a kiosk UI
-    (open UFW-rule-lifecycle question noted in `docs/agent-protocol.md`);
-    failed-pairing retry UX (#25); multi-child reuse (#28).
+  - `setup-wizard/first-boot/` — the first-boot hook (issue #27): a
+    systemd unit chained `After=omarchy-provision-owner.service`,
+    `Before=display-manager.service` (Omarchy 4 has no official first-boot
+    extension point — issue #26's research found the flow is one
+    monolithic script with no hook/drop-in point, so this integrates via
+    unit ordering instead), plus the `gum`-based parent-facing form
+    (name/tier/language) that drives the bootstrap script. Also fixes a
+    found-along-the-way gap: Omarchy's own first-boot drops SDDM autologin
+    after the first boot on unencrypted installs, which would silently
+    reintroduce a reachable login prompt for the mini tier — the wizard
+    now keeps autologin permanent instead. Verified so far at the
+    logic level in the dev VM (account detection, tier discovery); not yet
+    verified against a real `omarchy-provision-owner.service` run (would
+    need a fresh deferred-provisioning install). See its README.
+  - Not yet done: the wizard step that actually invokes pairing with a
+    kiosk UI (open UFW-rule-lifecycle question noted in
+    `docs/agent-protocol.md`); failed-pairing retry UX (#25); multi-child
+    reuse (#28, cross-machine, i.e. reuse between siblings' separate
+    machines). A related but separate question — multiple children sharing
+    one machine — was raised and intentionally deferred for now (SDDM
+    autologin is single-account machine-wide, the real blocker); see the
+    vault note's "Offene Frage: mehrere Kinder auf EINEM Rechner" tracking
+    entry.
 - `control/` and `quickshell-plugin/` are still stubs/skeletons — no real
   logic yet.
 - Not yet done: app installation as part of the package (nothing in the
