@@ -1,14 +1,25 @@
 #!/bin/bash
-# Fully automated dev-VM recreation: destroys/undefines the existing
-# domain (if any) and drives a brand-new one all the way from `virt-install`
-# through the interactive Omarchy installer/first-login and basic network/
-# SSH bring-up, using FIXED, PUBLIC, DEV-ONLY credentials (see below) so no
-# human needs to type anything at the console. Verified end-to-end
-# 2026-08-30 against a real run — see docs/dev-vm-setup.md for the full
-# background and root causes behind each step.
+# Fully automated dev-VM recreation using Omarchy's own unattended-install
+# mechanism (https://omarchy.org/manual/unattended-installs/) rather than
+# blind console keystroke automation. Destroys/undefines the existing
+# domain (if any), builds a "cidata" autoinstall volume (see
+# vm-cidata-build.sh), and boots a fresh VM with both the Omarchy ISO and
+# the cidata volume attached — the installer detects cidata, skips its own
+# interactive wizard entirely, and (because the cidata volume carries an
+# authorized_keys file) enables sshd and opens ufw for SSH on its own. The
+# only thing this script actually waits on is the install finishing, the
+# reboot, and SSH coming up — no keystrokes sent at all.
 #
-# This intentionally replaces the interactive parts of docs/dev-vm-setup.md
-# §3-6 for the common case. Still manual/separate: `scripts/vm-deploy-agent.sh`
+# Why not console automation: two earlier attempts (2026-08-30) used
+# `virsh send-key` timed against fixed sleeps, then against a screenshot-
+# stability check — both got desynced from the actual screen under real
+# host load (background VMs/work), corrupting the account-setup sequence
+# in ways that were only discovered much later, deep in the run. The
+# cidata approach removes the interactive wizard from the picture, so
+# there's nothing left to desync from.
+#
+# This intentionally replaces essentially all of docs/dev-vm-setup.md
+# §3-6 for the common case. Still separate: `scripts/vm-deploy-agent.sh`
 # (agent binaries + pairing) and `scripts/vm-snapshot.sh` (fast reset
 # afterward) — this script's job ends at "SSH as $CHILD_USER works".
 #
@@ -28,14 +39,10 @@ NVRAM_TEMPLATE=/var/lib/libvirt/boot/OVMF_VARS.4m.qcow2
 CHILD_USER="devchild"
 CHILD_PASSWORD="omarchy-kids-dev"
 CHILD_HOSTNAME="omarchy-kids-child"
+DEV_KEY="$HOME/.ssh/omarchy_kids_dev"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TYPE_US="$SCRIPT_DIR/vm-type-us.sh"
 VIRSH="virsh -c qemu:///system"
-
-send() { $VIRSH send-key "$DOMAIN" --codeset linux "$@"; }
-type_us() { "$TYPE_US" "$DOMAIN" "$1"; }
-enter() { send KEY_ENTER; }
 
 echo "==> Destroying/undefining any existing '$DOMAIN' domain"
 $VIRSH destroy "$DOMAIN" >/dev/null 2>&1 || true
@@ -55,6 +62,13 @@ if ! $VIRSH vol-list boot 2>/dev/null | grep -q OVMF_VARS.4m.qcow2; then
   rm -rf "$tmp"
 fi
 
+if [ ! -f "$DEV_KEY" ]; then
+  ssh-keygen -t ed25519 -f "$DEV_KEY" -N "" -C "omarchy-kids-dev"
+fi
+
+echo "==> Building the cidata autoinstall volume"
+"$SCRIPT_DIR/vm-cidata-build.sh" "$CHILD_USER" "$CHILD_PASSWORD" "$CHILD_HOSTNAME" "$DEV_KEY.pub" 40
+
 echo "==> Creating '$DOMAIN'"
 virt-install \
   --connect qemu:///system \
@@ -64,6 +78,7 @@ virt-install \
   --cpu host-passthrough \
   --disk pool=default,size=40,format=qcow2,bus=virtio \
   --cdrom "$ISO" \
+  --disk /var/lib/libvirt/boot/cidata.iso,device=cdrom,bus=sata \
   --os-variant archlinux \
   --network network=default,model=virtio \
   --graphics spice \
@@ -73,37 +88,9 @@ virt-install \
   --noautoconsole \
   --wait 0
 
-echo "==> Waiting for the Omarchy installer welcome screen"
-sleep 20
-enter  # "Press Return to Start Install"
-sleep 3
-
-echo "==> Keyboard layout: accepting default (English (US))"
-enter
-sleep 2
-
-echo "==> Username"
-type_us "$CHILD_USER"; enter; sleep 2
-echo "==> Password (+ confirm)"
-type_us "$CHILD_PASSWORD"; enter; sleep 2
-type_us "$CHILD_PASSWORD"; enter; sleep 2
-echo "==> Full name / email: skipping"
-enter; sleep 2
-enter; sleep 2
-echo "==> Hostname"
-type_us "$CHILD_HOSTNAME"; enter; sleep 2
-echo "==> Timezone: accepting auto-detected default"
-enter; sleep 2
-echo "==> Confirming account summary"
-enter; sleep 3
-echo "==> Disk selection: accepting the only disk"
-enter; sleep 2
-echo "==> Disabling disk encryption (Ctrl+C), confirming install"
-send KEY_LEFTCTRL KEY_C; sleep 1
-enter
-
-echo "==> Installing — this takes a few minutes, polling every 15s"
-for _ in $(seq 1 40); do
+echo "==> Installing unattended — no keystrokes needed. Polling every 15s"
+echo "    (typically ~5 minutes; inspect with: virsh -c qemu:///system screenshot $DOMAIN /tmp/check.png)"
+for _ in $(seq 1 60); do
   sleep 15
   state=$($VIRSH domstate "$DOMAIN" 2>/dev/null || echo unknown)
   if [ "$state" != "running" ]; then
@@ -117,56 +104,28 @@ if [ "$($VIRSH domstate "$DOMAIN" 2>/dev/null)" != "running" ]; then
   $VIRSH start "$DOMAIN"
 fi
 
-echo "==> Waiting for first graphical login screen"
-sleep 25
-echo "==> Logging in"
-type_us "$CHILD_PASSWORD"; enter
-sleep 8
-
-echo "==> Opening a terminal"
-send KEY_LEFTMETA KEY_ENTER
-sleep 2
-
-echo "==> Enabling sshd + ufw (password typed automatically)"
-type_us "sudo systemctl enable --now sshd"; enter; sleep 2
-type_us "$CHILD_PASSWORD"; enter; sleep 2
-type_us "sudo ufw allow ssh"; enter; sleep 2
-
-echo "==> Building a one-off SSH key ISO and mounting it in the guest"
-DEV_KEY="$HOME/.ssh/omarchy_kids_dev"
-if [ ! -f "$DEV_KEY" ]; then
-  ssh-keygen -t ed25519 -f "$DEV_KEY" -N "" -C "omarchy-kids-dev"
-fi
-tmp=$(mktemp -d)
-mkdir -p "$tmp/keydata"
-cp "$DEV_KEY.pub" "$tmp/keydata/authorized_keys"
-genisoimage -output "$tmp/key.iso" -volid KEYDATA -joliet -rock "$tmp/keydata/" >/dev/null 2>&1
-$VIRSH vol-delete --pool boot key.iso >/dev/null 2>&1 || true
-size=$(stat -c%s "$tmp/key.iso")
-$VIRSH vol-create-as boot key.iso "$size"
-$VIRSH vol-upload --pool boot key.iso "$tmp/key.iso"
-rm -rf "$tmp"
-$VIRSH change-media "$DOMAIN" sda --source /var/lib/libvirt/boot/key.iso --insert --live
-
-type_us "udisksctl mount -b /dev/sr0"; enter; sleep 2
-type_us "rm -f ~/.ssh && mkdir -p ~/.ssh && cp /run/media/$CHILD_USER/KEYDATA/authorized_keys ~/.ssh/ && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
-enter; sleep 2
-$VIRSH change-media "$DOMAIN" sda --eject --live >/dev/null 2>&1 || true
-
 echo "==> Waiting for a DHCP lease"
 ip=""
-for _ in $(seq 1 20); do
+for _ in $(seq 1 60); do
   ip=$($VIRSH net-dhcp-leases default 2>/dev/null | grep -F "$DOMAIN" | grep -oE '192\.168\.122\.[0-9]+' | tail -1)
   [ -n "$ip" ] && break
-  sleep 3
+  sleep 5
 done
 if [ -z "$ip" ]; then
   echo "!! Could not find a DHCP lease for '$DOMAIN' — check 'virsh net-dhcp-leases default' by hand." >&2
   exit 1
 fi
 
-echo "==> Verifying SSH ($CHILD_USER@$ip)"
-if ! timeout 10 ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new -i "$DEV_KEY" "$CHILD_USER@$ip" true; then
+echo "==> Waiting for SSH ($CHILD_USER@$ip) — sshd/ufw were configured by the installer itself"
+ok=0
+for _ in $(seq 1 30); do
+  if timeout 5 ssh -o BatchMode=yes -o ConnectTimeout=3 -o StrictHostKeyChecking=accept-new -i "$DEV_KEY" "$CHILD_USER@$ip" true 2>/dev/null; then
+    ok=1
+    break
+  fi
+  sleep 5
+done
+if [ "$ok" != 1 ]; then
   echo "!! SSH didn't come up — inspect with: virsh -c qemu:///system screenshot $DOMAIN /tmp/check.png" >&2
   exit 1
 fi

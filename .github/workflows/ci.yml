@@ -70,6 +70,7 @@ jobs:
             scripts/vm-deploy-agent.sh \
             scripts/vm-pair-for-dashboard.sh \
             scripts/vm-apply-tier.sh \
+            scripts/vm-cidata-build.sh \
             tiers/omarchy-kids-set-tier \
             setup-wizard/first-boot/omarchy-kids-setup-wizard
           cd setup-wizard/bootstrap

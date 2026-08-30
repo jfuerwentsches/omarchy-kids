@@ -12,18 +12,29 @@ setup-wizard/pairing flow that ships to an actual child computer.
 ## Fast path: fully automated recreation
 
 Once §1-2 below are done once per host, recreating the child VM from
-scratch no longer needs sections 3-7 done by hand — `scripts/vm-recreate.sh`
-drives the whole thing (virt-install → interactive installer → first login
-→ network/SSH bring-up) end to end, using a **fixed, dev-only account**
-(`devchild` / `omarchy-kids-dev`, English (US) keyboard, disk encryption
-disabled). This isn't a secret worth protecting: the VM lives on an
-isolated libvirt NAT network never reachable from outside the host, and is
-throwaway by design — same idea as Vagrant boxes shipping a well-known
-default keypair. Verified end-to-end 2026-08-30.
+scratch no longer needs sections 3-7 done by hand at all —
+`scripts/vm-recreate.sh` drives the whole thing using Omarchy's own
+**unattended-install mechanism**
+([manual](https://omarchy.org/manual/unattended-installs/), real source in
+[omacom-io/omarchy-iso](https://github.com/omacom-io/omarchy-iso)): a
+second, `cidata`-labeled ISO (built by `scripts/vm-cidata-build.sh`, the
+cloud-init NoCloud label libvirt/Proxmox/Packer all already know how to
+attach) carries `user_configuration.json`/`user_credentials.json` — the
+exact JSON the installer's own interactive wizard would write — plus an
+`authorized_keys` file. Its presence makes the installer skip its
+interactive wizard **entirely** (no keystrokes needed at all, not even
+"press Return to start") and, because `authorized_keys` is present, the
+installer enables `sshd` and opens `ufw` for SSH on its own before ever
+rebooting. A **fixed, dev-only account** (`devchild` / `omarchy-kids-dev`,
+English (US) keyboard, disk encryption disabled) is baked into that JSON.
+This isn't a secret worth protecting: the VM lives on an isolated libvirt
+NAT network never reachable from outside the host, and is throwaway by
+design — same idea as Vagrant boxes shipping a well-known default keypair.
+Verified end-to-end 2026-08-31.
 
 ```bash
-scripts/vm-recreate.sh                       # ~7 minutes, no interaction
-scripts/vm-deploy-agent.sh omarchy-kids-child.local   # or the printed IP
+scripts/vm-recreate.sh                       # ~5 minutes, no interaction
+scripts/vm-deploy-agent.sh <ip>               # IP is printed at the end
 scripts/vm-pair-for-dashboard.sh <ip> Testkind        # prints a hosts.toml block
 scripts/vm-snapshot.sh save fresh-boot                # so the next reset is instant
 ```
@@ -45,14 +56,28 @@ scripts/vm-apply-tier.sh <ip> mini
 scripts/vm-snapshot.sh save kiosk-ready      # back to fully set up
 ```
 
-Sections 3-8 below explain *why* each of those steps works and exist as a
-reference/fallback (a from-scratch, non-scripted walkthrough, or if
-Omarchy's installer flow changes and the script's fixed keystroke sequence
-needs updating — inspect where it's stuck with `virsh -c qemu:///system
-screenshot omarchy-kids-child /tmp/check.png`). English (US) was chosen
-deliberately over German for the automated path — `scripts/vm-type-us.sh`
-needs no QWERTZ shift-swapping tricks, unlike `vm-type-de.sh` (§7 below
-still assumes German if you install by hand with a German layout).
+**Why not console keystroke automation** (`virsh send-key` against the
+interactive wizard, this section's approach before 2026-08-31): two
+separate attempts got desynced from the actual screen under real host load
+(fixed sleeps, then a screenshot-stability check — both corrupted the
+account-setup sequence in ways only discovered much later, deep into the
+run; see git history on this file for the gory details if curious). The
+cidata approach doesn't time anything against a screen at all, so there's
+nothing left to desync from. `scripts/vm-type-us.sh`/`vm-type-de.sh` are
+kept around as debugging tools (e.g. to poke around inside a stuck
+install) and for §5-7's fully-manual fallback path below, not because
+`vm-recreate.sh` still needs them.
+
+**A real gotcha this surfaced**: a freshly-`vm-recreate.sh`'d VM has nobody
+actually logged into the graphical session (unattended installs skip that
+entirely), so `agentd`'s `PartOf=graphical-session.target` unit gets torn
+down the moment whichever `ssh -tt` session first enabled it closes —
+systemd-logind stops session-bound units once a user's last session ends,
+and an unattended VM's "last session" is always some short-lived SSH
+connection. Fixed in `vm-deploy-agent.sh` with `loginctl enable-linger
+devchild`, which keeps the user's systemd instance (and anything bound to
+it) running independent of login sessions — the same mechanism production
+machines need anyway for `agentd` to survive a graphical logout.
 
 ## 1. Host packages + libvirt
 

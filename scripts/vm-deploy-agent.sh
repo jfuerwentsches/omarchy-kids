@@ -39,6 +39,17 @@ echo "==> Installing to /usr/bin (sudo via known dev password)"
 ssh -tt "${ssh_opts[@]}" "$CHILD_USER@$HOST" \
   "echo '$CHILD_PASSWORD' | sudo -S install -m755 /tmp/omarchy-kids-agent /tmp/omarchy-kids-agentd /tmp/omarchy-kids-pairing /tmp/omarchy-kids-override-helper /tmp/omarchy-kids-repair-helper /tmp/omarchy-kids-run /usr/bin/"
 
+# Without lingering, agentd's `graphical-session.target` binding gets torn
+# down the moment this (or any) `ssh -tt` session ends, since a fresh
+# unattended VM (via vm-recreate.sh) has nobody actually logged into the
+# graphical session to keep it alive — found 2026-08-31: agentd started
+# fine, then systemd stopped it ~11s later the moment the enabling SSH
+# session's pseudo-tty closed. `enable-linger` keeps the user's systemd
+# instance (and anything bound to it) running independent of login sessions.
+echo "==> Enabling lingering so agentd survives this SSH session ending"
+ssh -tt "${ssh_opts[@]}" "$CHILD_USER@$HOST" \
+  "echo '$CHILD_PASSWORD' | sudo -S loginctl enable-linger $CHILD_USER"
+
 echo "==> Installing + starting the agentd systemd --user unit"
 ssh "${ssh_opts[@]}" "$CHILD_USER@$HOST" bash -s <<'EOF'
 set -e

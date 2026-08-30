@@ -299,39 +299,64 @@ is solid. Don't start scaffolding other tiers unless asked.
   early revert attempt looked like it worked but had done nothing. Full
   root cause and the exact migration steps are in `docs/dev-vm-setup.md`'s
   "Known gotchas" section.
-- **Dev VM recreation + agent deployment + pairing fully scripted
-  (2026-08-30).** New `scripts/vm-recreate.sh` drives the *entire* VM
-  lifecycle — `virt-install` through the interactive Omarchy installer and
-  first login to a working SSH login — with zero human interaction, using
-  a fixed, dev-only account (`devchild`/`omarchy-kids-dev`, English (US)
-  keyboard chosen specifically to avoid `vm-type-de.sh`'s QWERTZ mapping,
-  disk encryption disabled to avoid a LUKS prompt blocking every scripted
-  reboot). Not a secret worth protecting — isolated libvirt NAT network,
-  throwaway VM by design, same idea as Vagrant's well-known default
-  keypair. New `scripts/vm-deploy-agent.sh` (build + scp + install to
-  `/usr/bin` + systemd unit) and `scripts/vm-pair-for-dashboard.sh` (opens
-  the pairing UFW rule, pairs, prints a ready `hosts.toml` block, closes
-  the rule again) close the remaining gaps — together these three plus the
-  now-working `vm-snapshot.sh` (previous bullet) mean a fresh, paired,
-  agentd-running dev child VM is one command chain away, no manual steps at
-  all. New `scripts/vm-type-us.sh` companion to `vm-type-de.sh` for the
-  simpler US-layout keystroke mapping. Key technique for the scripted
-  `sudo` calls: `ssh -tt host "echo \"$PASSWORD\" | sudo -S cmd"` — plain
-  `sudo` over non-interactive SSH refuses to read a password at all (no
-  `sshpass`/`expect` needed). Also: `virsh vol-create-as`/`vol-upload` into
-  a libvirt storage pool needs no `sudo` at all (unlike `cp` into
-  `/var/lib/libvirt/...` directly) — used to get the SSH key ISO onto the
-  host without ever needing a human for that step either. Verified with a
-  real, complete run: fresh VM → installer → login → sshd/ufw → key →
-  agent binaries → agentd running → paired → `hosts.toml` entry → snapshot
-  saved. Full walkthrough and rationale in `docs/dev-vm-setup.md`'s new
-  "Fast path" section at the top. Deliberately kept tier application
-  (`omarchy-kids-set-tier`) as a separate step/script
+- **Dev VM recreation + agent deployment + pairing fully scripted, via
+  Omarchy's own unattended-install mechanism, not console automation
+  (2026-08-30/31).** New `scripts/vm-recreate.sh` drives the *entire* VM
+  lifecycle with zero keystrokes sent at all: `scripts/vm-cidata-build.sh`
+  builds a `cidata`-labeled ISO (the cloud-init NoCloud convention Omarchy's
+  installer looks for — see
+  [the manual](https://omarchy.org/manual/unattended-installs/) and the
+  real source in
+  [omacom-io/omarchy-iso](https://github.com/omacom-io/omarchy-iso))
+  carrying `user_configuration.json`/`user_credentials.json` (the exact
+  JSON the interactive wizard itself writes — reproduced by hand from that
+  repo's `configurator` script/`orchestrator/context.py`, including its
+  partition-size arithmetic for a fixed 40G disk) plus an `authorized_keys`
+  file. Attaching it makes the installer skip its interactive wizard
+  *entirely* and, because `authorized_keys` is present, enables `sshd` and
+  opens `ufw` on its own before rebooting — so `vm-recreate.sh` only waits
+  (poll `domstate`, then a DHCP lease, then SSH), never types anything. A
+  fixed, dev-only account (`devchild`/`omarchy-kids-dev`) is baked into
+  that JSON — not a secret worth protecting, see prior reasoning.
+  **Superseded approach, kept here as a record:** two earlier attempts this
+  session drove the interactive wizard via blind `virsh send-key` (first
+  fixed sleeps, then a screenshot-stability-based `settle()` function) —
+  both got desynced from the actual screen under real host load and
+  corrupted the account-setup sequence in ways only discovered deep into
+  the run (an "Enter" landing on a screen that hadn't rendered yet, or on
+  one that silently never changed because the keypress was dropped, which
+  a stability check can't distinguish from "already settled"). The cidata
+  approach has nothing to time against a screen for, so there's nothing
+  left to desync. `scripts/vm-type-us.sh` (a US-layout companion to
+  `vm-type-de.sh`) survives as a debugging tool, not a dependency of
+  `vm-recreate.sh` anymore.
+  New `scripts/vm-deploy-agent.sh` (build + scp + install to `/usr/bin` +
+  systemd unit) and `scripts/vm-pair-for-dashboard.sh` (opens the pairing
+  UFW rule, pairs, prints a ready `hosts.toml` block, closes the rule
+  again) close the remaining gaps. Real gotcha found deploying to a truly
+  unattended VM: nobody is ever logged into the graphical session, so
+  `agentd`'s `PartOf=graphical-session.target` unit got torn down the
+  moment the enabling `ssh -tt` session closed (systemd-logind stops
+  session-bound units once a user's last session ends) — fixed with
+  `loginctl enable-linger devchild` in `vm-deploy-agent.sh`. Key technique
+  for the scripted `sudo` calls generally: `ssh -tt host "echo
+  \"$PASSWORD\" | sudo -S cmd"` — plain `sudo` over non-interactive SSH
+  refuses to read a password at all (no `sshpass`/`expect` needed). Also:
+  `virsh vol-create-as`/`vol-upload` into a libvirt storage pool needs no
+  `sudo` at all (unlike `cp` into `/var/lib/libvirt/...` directly) — used
+  to get both the cidata volume and (in an earlier iteration) an SSH-key
+  ISO onto the host without ever needing a human for that step. Verified
+  with a real, complete run: fresh VM → unattended install → SSH (sshd/ufw/
+  key already configured by the installer) → agent binaries → agentd
+  running (surviving session teardown) → paired → `hosts.toml` entry →
+  snapshot saved. Full walkthrough and rationale in
+  `docs/dev-vm-setup.md`'s "Fast path" section at the top. Deliberately
+  kept tier application (`omarchy-kids-set-tier`) as a separate step/script
   (`scripts/vm-apply-tier.sh`), not folded into `vm-recreate.sh` — two
-  distinct test scenarios need two different starting snapshots: `fresh-boot`
-  (bare, paired, no tier — for testing onboarding/pairing itself,
-  repeatable via `vm-pair-for-dashboard.sh`) vs. `kiosk-ready` (tier
-  applied — for testing features on an already-set-up kids computer).
+  distinct test scenarios need two different starting snapshots:
+  `fresh-boot` (bare, paired, no tier — for testing onboarding/pairing
+  itself, repeatable via `vm-pair-for-dashboard.sh`) vs. `kiosk-ready`
+  (tier applied — for testing features on an already-set-up kids computer).
   Both snapshots verified for real on the same VM (VT lockdown actually
   `masked`, not just `disabled`; kiosk launcher plugin present; Hyprland's
   `SUPER + SPACE` kiosk binding confirmed in place).
