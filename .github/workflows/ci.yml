@@ -42,10 +42,11 @@ jobs:
       - run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build qt6-base-dev libtomlplusplus-dev
+            cmake ninja-build qt6-base-dev libtomlplusplus-dev libgtest-dev
 
       - run: cmake -S control -B control/build -G Ninja -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build control/build
+      - run: ctest --test-dir control/build --output-on-failure
 
   lint-shell:
     name: shell scripts (shellcheck)

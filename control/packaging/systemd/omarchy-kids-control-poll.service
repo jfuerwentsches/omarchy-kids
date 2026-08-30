@@ -1,0 +1,6 @@
+[Unit]
+Description=Omarchy Kids Control Center status poll (updates the parent headerbar cache)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/omarchy-kids-control --poll
