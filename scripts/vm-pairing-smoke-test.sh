@@ -19,7 +19,7 @@
 # safe to run on every iteration without redoing the account/tier setup.
 #
 # Usage: vm-pairing-smoke-test.sh <child_host> <child_user>
-# Example: vm-pairing-smoke-test.sh 192.168.122.109 fine
+# Example: vm-pairing-smoke-test.sh 192.168.122.109 devchild
 set -euo pipefail
 
 CHILD_HOST="${1:?Usage: vm-pairing-smoke-test.sh <child_host> <child_user>}"

@@ -9,6 +9,51 @@ Everything here is dev-only. None of it — the root SSH access, the ISO
 handling, the blind-keyboard-typing fallback — is part of the production
 setup-wizard/pairing flow that ships to an actual child computer.
 
+## Fast path: fully automated recreation
+
+Once §1-2 below are done once per host, recreating the child VM from
+scratch no longer needs sections 3-7 done by hand — `scripts/vm-recreate.sh`
+drives the whole thing (virt-install → interactive installer → first login
+→ network/SSH bring-up) end to end, using a **fixed, dev-only account**
+(`devchild` / `omarchy-kids-dev`, English (US) keyboard, disk encryption
+disabled). This isn't a secret worth protecting: the VM lives on an
+isolated libvirt NAT network never reachable from outside the host, and is
+throwaway by design — same idea as Vagrant boxes shipping a well-known
+default keypair. Verified end-to-end 2026-08-30.
+
+```bash
+scripts/vm-recreate.sh                       # ~7 minutes, no interaction
+scripts/vm-deploy-agent.sh omarchy-kids-child.local   # or the printed IP
+scripts/vm-pair-for-dashboard.sh <ip> Testkind        # prints a hosts.toml block
+scripts/vm-snapshot.sh save fresh-boot                # so the next reset is instant
+```
+
+**Two snapshots, two test scenarios** — deliberately kept as separate steps
+rather than one script, since they answer different questions:
+
+- **`fresh-boot`** (above): a bare, paired child machine with `agentd`
+  running but no tier applied yet — the right starting point for testing
+  *onboarding itself* (re-run `vm-pair-for-dashboard.sh` against it
+  repeatedly to exercise the pairing flow without redoing the OS install).
+- **`kiosk-ready`**: `fresh-boot` plus `omarchy-kids-set-tier` actually
+  applied — the right starting point for testing *features on an already
+  set-up kids computer* (kiosk launcher, VT lockdown, theme all live).
+
+```bash
+scripts/vm-snapshot.sh restore fresh-boot    # back to bare+paired
+scripts/vm-apply-tier.sh <ip> mini
+scripts/vm-snapshot.sh save kiosk-ready      # back to fully set up
+```
+
+Sections 3-8 below explain *why* each of those steps works and exist as a
+reference/fallback (a from-scratch, non-scripted walkthrough, or if
+Omarchy's installer flow changes and the script's fixed keystroke sequence
+needs updating — inspect where it's stuck with `virsh -c qemu:///system
+screenshot omarchy-kids-child /tmp/check.png`). English (US) was chosen
+deliberately over German for the automated path — `scripts/vm-type-us.sh`
+needs no QWERTZ shift-swapping tricks, unlike `vm-type-de.sh` (§7 below
+still assumes German if you install by hand with a German layout).
+
 ## 1. Host packages + libvirt
 
 ```bash
@@ -64,6 +109,19 @@ of how your `sudo` is set up.
 
 ## 4. Create the VM
 
+One-time per host: Arch's `edk2-ovmf` package only ships a **raw** NVRAM
+template (`/usr/share/edk2/x64/OVMF_VARS.4m.fd`) — there's no qcow2 variant
+to point at, unlike Fedora/Debian. Convert one yourself, once, and reuse it
+for every VM you create from now on:
+
+```bash
+sudo qemu-img convert -O qcow2 \
+  /usr/share/edk2/x64/OVMF_VARS.4m.fd /var/lib/libvirt/boot/OVMF_VARS.4m.qcow2
+sudo chmod 0644 /var/lib/libvirt/boot/OVMF_VARS.4m.qcow2
+```
+
+Then:
+
 ```bash
 sudo virt-install \
   --name omarchy-kids-child \
@@ -76,7 +134,7 @@ sudo virt-install \
   --network network=default,model=virtio \
   --graphics spice \
   --video virtio \
-  --boot uefi,nvram.templateFormat=qcow2 \
+  --boot loader=/usr/share/edk2/x64/OVMF_CODE.4m.fd,loader.readonly=yes,loader.type=pflash,nvram.template=/var/lib/libvirt/boot/OVMF_VARS.4m.qcow2,nvram.templateFormat=qcow2 \
   --features smm=off \
   --noautoconsole \
   --wait -1
@@ -84,11 +142,11 @@ sudo virt-install \
 
 Adjust `--memory`/`--vcpus` to the host's headroom (`free -h`) — 6GB/4 vCPUs
 assumes an 8-16GB host that's also running other things. UEFI without
-secure boot (`--boot uefi`, no secboot vars) and `smm=off` matches Omarchy's
-own requirement to have Secure Boot/TPM disabled. `nvram.templateFormat=qcow2`
-is there so `virsh snapshot-create-as` (see "Fast iteration" below) works
-out of the box — libvirt's default raw NVRAM format rejects internal
-snapshots outright (found 2026-08-30, see "Known gotchas").
+secure boot and `smm=off` matches Omarchy's own requirement to have Secure
+Boot/TPM disabled. The explicit `loader=`/`nvram.template=` form (rather
+than the simpler `--boot uefi,nvram.templateFormat=qcow2`) is required —
+see "Known gotchas" for why the simpler form doesn't work on this host at
+all, not just on VMs predating this doc.
 
 ## 5. Install (interactive — this part you drive yourself)
 
@@ -286,22 +344,76 @@ time.
   matters mid-session.
 - **`virsh snapshot-create-as` refuses a VM with the default raw NVRAM
   format**: "internal snapshots of a VM with pflash based firmware require
-  QCOW2 nvram format" (hit against the real dev VM, 2026-08-30 — check
-  yours with `virsh dumpxml <domain> | grep nvram`; stock `virt-install
-  --boot uefi` produces `format='raw'`). §4's `virt-install` command now
-  requests `nvram.templateFormat=qcow2` for new VMs. An existing raw-NVRAM
-  VM needs a one-time migration (VM shut off):
+  QCOW2 nvram format" (check yours with `virsh dumpxml <domain> | grep
+  nvram`; stock `virt-install --boot uefi` produces `format='raw'`). §4
+  now creates new VMs with qcow2 NVRAM from the start. Root cause, if
+  you're debugging this yourself: as of libvirt ~10.10, the NVRAM store's
+  `format` must exactly match its `templateFormat` — libvirt refuses to
+  convert between them at start time, even if the store file already
+  exists on disk in the "wrong" format ("`Operation not supported:
+  conversion of the nvram template to another target format is not
+  supported`"). Since Arch's `edk2-ovmf` only ships a raw template, the
+  simple `--boot uefi,nvram.templateFormat=qcow2` form (which asks libvirt
+  to *auto-select* a firmware descriptor matching that templateFormat)
+  always fails with "`Unable to find 'efi' firmware that is compatible
+  with the current configuration`" — no installed descriptor declares a
+  qcow2 template. §4's explicit `loader=`/`nvram.template=<our own
+  pre-converted qcow2 template>` form sidesteps the auto-selection
+  matching entirely. Also: `virt-xml`/`virt-install`'s `--boot` CLI has no
+  `nvram.format` property at all (checked `virtinst/domain/os.py` —only
+  `nvram`, `nvram.template`, `nvram.templateFormat` are mapped), so the
+  `format='qcow2'` attribute can only be set by hand-editing the domain
+  XML — there's no CLI incantation for it.
+
+  **Verified migration for an existing raw-NVRAM VM** (2026-08-30, full
+  round trip incl. snapshot + revert against the real dev VM — domain shut
+  off first):
   ```bash
   sudo qemu-img convert -O qcow2 \
     /var/lib/libvirt/qemu/nvram/<domain>_VARS.fd \
-    /var/lib/libvirt/qemu/nvram/<domain>_VARS.qcow2.fd
-  sudo virt-xml <domain> --edit --boot nvram=/var/lib/libvirt/qemu/nvram/<domain>_VARS.qcow2.fd,nvram.templateFormat=qcow2
+    /var/lib/libvirt/qemu/nvram/<domain>_VARS.qcow2
+  sudo cp /var/lib/libvirt/qemu/nvram/<domain>_VARS.qcow2 \
+          /var/lib/libvirt/qemu/nvram/<domain>_VARS.qcow2.template
+  sudo chmod 0644 /var/lib/libvirt/qemu/nvram/<domain>_VARS.qcow2{,.template}
+
+  virsh dumpxml <domain> > /tmp/<domain>.xml
   ```
-  Not verified against a real VM in this session (didn't want to shut down
-  the in-progress dev VM to test it) — verify the round trip (`virsh
-  snapshot-create-as`, revert, boot) works before relying on it, or just
-  recreate the VM with the updated §4 command instead, since this whole
-  document already treats the VM as throwaway.
+  Then hand-edit `/tmp/<domain>.xml`:
+  - Remove any `firmware='efi'` attribute on the `<os>` tag, and any
+    separate `<firmware>...</firmware>` block — both re-trigger the same
+    firmware auto-selection matching that fails above, even alongside an
+    otherwise-explicit `<loader>`/`<nvram>`.
+  - Replace the `<nvram>` line with:
+    ```xml
+    <nvram template='/var/lib/libvirt/qemu/nvram/<domain>_VARS.qcow2.template' templateFormat='qcow2' format='qcow2'>/var/lib/libvirt/qemu/nvram/<domain>_VARS.qcow2</nvram>
+    ```
+  ```bash
+  virsh define /tmp/<domain>.xml
+  virsh start <domain>
+  ```
+  The original `_VARS.fd` is left in place untouched as a fallback. Note
+  `scripts/vm-snapshot.sh` itself needed a fix alongside this (see its
+  header comment) — it called `sudo virsh`, which fails silently in a
+  non-interactive context and made an early test of this look like the
+  revert had done nothing.
+- **Scripting `sudo` over SSH needs `ssh -tt` + `sudo -S`, not plain
+  `sudo`.** A bare `ssh host "sudo cmd"` fails with "a terminal is required
+  to read the password" — `sudo` insists on opening `/dev/tty` directly,
+  ignoring stdin, unless told otherwise. `sudo -S` makes it read the
+  password from stdin instead (`echo "$PASSWORD" | sudo -S cmd`); `ssh -tt`
+  forces a pseudo-tty so the remote shell behaves like an interactive
+  session. Combine both, and the fixed dev password (see "Fast path"
+  above) makes every `sudo`-requiring step in `vm-deploy-agent.sh`/
+  `vm-pair-for-dashboard.sh` fully non-interactive. No `sshpass`/`expect`
+  needed. Also worth knowing: `virsh`/`virt-install` themselves never need
+  `sudo` at all on a host where your user is in the `libvirt` group (which
+  this doc's §1 already sets up) — plain `virsh -c qemu:///system ...`
+  (not `sudo virsh`, and not bare `virsh`, which defaults to the
+  unprivileged `qemu:///session` and silently doesn't see your domains) is
+  enough, including for `vol-upload`/`vol-create-as` into a storage pool —
+  a good way to get a file onto the host's libvirt-managed storage without
+  ever needing your own `sudo` password (used by `vm-recreate.sh` to avoid
+  needing a human for the key-ISO step).
 
 ## Quick reference: iterating on `tiers/`
 
@@ -310,10 +422,22 @@ rsync -av --delete tiers/ omarchy-kids-child:~/omarchy-kids-tiers/
 ssh omarchy-kids-child "chmod +x ~/omarchy-kids-tiers/omarchy-kids-set-tier && ~/omarchy-kids-tiers/omarchy-kids-set-tier mini"
 
 # Visual check without touching the VM's own input:
-sudo virsh screenshot omarchy-kids-child /tmp/check.png
+virsh -c qemu:///system screenshot omarchy-kids-child /tmp/check.png
 
 # Fast pairing iteration (see "Fast iteration" above) — revert to a
 # pre-pairing snapshot, then run the round trip against it:
 ./scripts/vm-snapshot.sh restore fresh-boot
 ./scripts/vm-pairing-smoke-test.sh 192.168.122.109 <child_user>
+
+# Full from-scratch recreation (see "Fast path" at the top) instead of
+# reinstalling by hand:
+./scripts/vm-recreate.sh
+./scripts/vm-deploy-agent.sh <ip>
+./scripts/vm-pair-for-dashboard.sh <ip> Testkind
+./scripts/vm-snapshot.sh save fresh-boot
+
+# Turn that bare-but-paired VM into an actual kids computer for feature
+# testing (see "Two snapshots, two test scenarios" above):
+./scripts/vm-apply-tier.sh <ip> mini
+./scripts/vm-snapshot.sh save kiosk-ready
 ```

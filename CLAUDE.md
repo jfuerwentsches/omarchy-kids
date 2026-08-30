@@ -264,11 +264,10 @@ is solid. Don't start scaffolding other tiers unless asked.
   configuration`. `virsh domcapabilities` reports `<varstore supported='no'/>`
   for this host's libvirt/QEMU/edk2-ovmf combination, so qcow2-templated
   NVRAM isn't available here at all right now, not just unmigrated on the
-  old VM — the doc's "one-time migration" gotcha section doesn't cover this
-  failure mode. Worked around by dropping `nvram.templateFormat=qcow2`
-  (plain `--boot uefi`, default raw NVRAM) — installs and boots fine, but
-  means `vm-snapshot.sh` is unusable against the new VM too until this is
-  actually root-caused. New VM: same username (`fine`), new IP
+  old VM. Worked around at the time by dropping `nvram.templateFormat=qcow2`
+  (plain `--boot uefi`, default raw NVRAM) to get unblocked; **root-caused
+  and properly fixed later the same day** — see the next bullet — so this
+  workaround is no longer needed for new VMs. New VM: same username (`devchild`), new IP
   `192.168.122.126` (updated in `~/.ssh/config`), re-paired fresh (new
   `control/` host entry, replacing the stale one from the old VM). Also
   found and fixed a real bug while driving the reinstall:
@@ -278,6 +277,64 @@ is solid. Don't start scaffolding other tiers unless asked.
   script's own `>/dev/null 2>&1` swallowed the resulting "failed to get
   domain" error, so this looked like nothing was happening rather than an
   outright failure. Now fixed.
+- **qcow2-NVRAM/snapshot support actually root-caused and fixed
+  (2026-08-30).** As of libvirt ~10.10, a domain's NVRAM `format` must
+  exactly match its `templateFormat` — no auto-conversion at start time —
+  and Arch's `edk2-ovmf` only ships a raw template, so the simple `--boot
+  uefi,nvram.templateFormat=qcow2` form (firmware *auto-selection*) can
+  never work here: no installed firmware descriptor declares a qcow2
+  template. Fixed by converting `OVMF_VARS.4m.fd` to qcow2 once
+  (`/var/lib/libvirt/boot/OVMF_VARS.4m.qcow2`) and pointing new VMs at it
+  explicitly via `--boot loader=...,nvram.template=...,nvram.templateFormat=qcow2`
+  (bypassing auto-selection entirely) — `docs/dev-vm-setup.md` §4 updated.
+  Migrated the current dev VM in place the same way (existing raw
+  `_VARS.fd` converted, domain redefined with hand-edited XML — virt-install/
+  virt-xml's `--boot` CLI has no property for the NVRAM `format=` attribute
+  at all, so this step can't be done through their CLI, only by editing the
+  XML directly). Verified with a real save→modify→revert round trip: created
+  a marker file, snapshotted, changed state further, reverted, confirmed the
+  marker was gone and agentd/pairing survived intact. Also fixed
+  `scripts/vm-snapshot.sh` alongside this — it called `sudo virsh`, which
+  fails silently (no visible error) in a non-interactive context, so an
+  early revert attempt looked like it worked but had done nothing. Full
+  root cause and the exact migration steps are in `docs/dev-vm-setup.md`'s
+  "Known gotchas" section.
+- **Dev VM recreation + agent deployment + pairing fully scripted
+  (2026-08-30).** New `scripts/vm-recreate.sh` drives the *entire* VM
+  lifecycle — `virt-install` through the interactive Omarchy installer and
+  first login to a working SSH login — with zero human interaction, using
+  a fixed, dev-only account (`devchild`/`omarchy-kids-dev`, English (US)
+  keyboard chosen specifically to avoid `vm-type-de.sh`'s QWERTZ mapping,
+  disk encryption disabled to avoid a LUKS prompt blocking every scripted
+  reboot). Not a secret worth protecting — isolated libvirt NAT network,
+  throwaway VM by design, same idea as Vagrant's well-known default
+  keypair. New `scripts/vm-deploy-agent.sh` (build + scp + install to
+  `/usr/bin` + systemd unit) and `scripts/vm-pair-for-dashboard.sh` (opens
+  the pairing UFW rule, pairs, prints a ready `hosts.toml` block, closes
+  the rule again) close the remaining gaps — together these three plus the
+  now-working `vm-snapshot.sh` (previous bullet) mean a fresh, paired,
+  agentd-running dev child VM is one command chain away, no manual steps at
+  all. New `scripts/vm-type-us.sh` companion to `vm-type-de.sh` for the
+  simpler US-layout keystroke mapping. Key technique for the scripted
+  `sudo` calls: `ssh -tt host "echo \"$PASSWORD\" | sudo -S cmd"` — plain
+  `sudo` over non-interactive SSH refuses to read a password at all (no
+  `sshpass`/`expect` needed). Also: `virsh vol-create-as`/`vol-upload` into
+  a libvirt storage pool needs no `sudo` at all (unlike `cp` into
+  `/var/lib/libvirt/...` directly) — used to get the SSH key ISO onto the
+  host without ever needing a human for that step either. Verified with a
+  real, complete run: fresh VM → installer → login → sshd/ufw → key →
+  agent binaries → agentd running → paired → `hosts.toml` entry → snapshot
+  saved. Full walkthrough and rationale in `docs/dev-vm-setup.md`'s new
+  "Fast path" section at the top. Deliberately kept tier application
+  (`omarchy-kids-set-tier`) as a separate step/script
+  (`scripts/vm-apply-tier.sh`), not folded into `vm-recreate.sh` — two
+  distinct test scenarios need two different starting snapshots: `fresh-boot`
+  (bare, paired, no tier — for testing onboarding/pairing itself,
+  repeatable via `vm-pair-for-dashboard.sh`) vs. `kiosk-ready` (tier
+  applied — for testing features on an already-set-up kids computer).
+  Both snapshots verified for real on the same VM (VT lockdown actually
+  `masked`, not just `disabled`; kiosk launcher plugin present; Hyprland's
+  `SUPER + SPACE` kiosk binding confirmed in place).
 - Not yet done: app installation as part of the package (nothing in the
   current line-up is installed by the package yet), the `omarkid-gcompris`
   fork itself, app-wrapper/time-tracking integration, locale implementation

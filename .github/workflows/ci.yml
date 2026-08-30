@@ -63,8 +63,13 @@ jobs:
       - run: |
           shellcheck --shell=bash \
             scripts/vm-type-de.sh \
+            scripts/vm-type-us.sh \
             scripts/vm-snapshot.sh \
             scripts/vm-pairing-smoke-test.sh \
+            scripts/vm-recreate.sh \
+            scripts/vm-deploy-agent.sh \
+            scripts/vm-pair-for-dashboard.sh \
+            scripts/vm-apply-tier.sh \
             tiers/omarchy-kids-set-tier \
             setup-wizard/first-boot/omarchy-kids-setup-wizard
           cd setup-wizard/bootstrap

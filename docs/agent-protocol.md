@@ -211,7 +211,7 @@ for a real parent decision:
 the vault note's own data-model sketch exactly.
 
 Verified with a full round trip against the dev VM (GUI on the parent's
-own machine, `serve` on the VM as `fine`): fingerprint shown, confirmed,
+own machine, `serve` on the VM as `devchild`): fingerprint shown, confirmed,
 key installed, and a real SSH login through it correctly restricted to
 `omarchy-kids-agent`. Two real bugs found and fixed along the way: a
 `QProcess::start()` failure (binary missing from PATH) went unhandled and

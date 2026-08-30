@@ -18,6 +18,16 @@
 #   vm-snapshot.sh save <name>       # domain must be shut off
 #   vm-snapshot.sh restore <name>    # domain must be shut off
 #   vm-snapshot.sh list
+#
+# Uses `-c qemu:///system` explicitly rather than plain `virsh` or `sudo
+# virsh` — this host's user is already in the `libvirt` group with polkit
+# access to the system connection, so neither is needed, and both silently
+# do the wrong thing: plain `virsh` defaults to `qemu:///session` (doesn't
+# see this domain at all), and a bare `sudo virsh restore` in a
+# non-interactive context fails on the password prompt with no visible
+# error under `set -e` swallowing it upstream — found 2026-08-30 when a
+# `restore` call appeared to succeed but silently left the VM's disk
+# untouched (same class of bug as `vm-type-de.sh`'s missing `-c` flag).
 set -euo pipefail
 
 DOMAIN="${OMARCHY_KIDS_DEV_VM:-omarchy-kids-child}"
@@ -31,14 +41,14 @@ cmd="${1:-}"
 case "$cmd" in
   save)
     name="${2:?Usage: vm-snapshot.sh save <name>}"
-    sudo virsh snapshot-create-as "$DOMAIN" "$name" "dev snapshot: $name ($(date --iso-8601=seconds))"
+    virsh -c qemu:///system snapshot-create-as "$DOMAIN" "$name" "dev snapshot: $name ($(date --iso-8601=seconds))"
     ;;
   restore)
     name="${2:?Usage: vm-snapshot.sh restore <name>}"
-    sudo virsh snapshot-revert "$DOMAIN" "$name"
+    virsh -c qemu:///system snapshot-revert "$DOMAIN" "$name"
     ;;
   list)
-    sudo virsh snapshot-list "$DOMAIN"
+    virsh -c qemu:///system snapshot-list "$DOMAIN"
     ;;
   *)
     usage

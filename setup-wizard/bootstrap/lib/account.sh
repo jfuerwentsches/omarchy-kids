@@ -49,7 +49,7 @@ create_parent_admin_account() {
 # exactly this command, not a return to broad admin rights.
 #
 # Filename sorts last on purpose (verified against a real conflict in the
-# dev VM: a pre-existing `fine ALL=(ALL) ALL` in /etc/sudoers.d/04_fine
+# dev VM: a pre-existing `devchild ALL=(ALL) ALL` in /etc/sudoers.d/04_devchild
 # alphabetically outranked an earlier "00-" filename here and silently
 # shadowed this NOPASSWD grant — sudoers uses last-match-wins per exact
 # command line, regardless of which rule is narrower). A "zz-" prefix keeps
