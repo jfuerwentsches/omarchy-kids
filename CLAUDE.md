@@ -237,6 +237,47 @@ is solid. Don't start scaffolding other tiers unless asked.
   updates-in-place, malformed-file handling), wired into CI via `ctest`.
   `gui/`'s Qt widgets and `AgentClient`'s SSH calls remain untested beyond
   the existing end-to-end VM verification — a real gap, left for later.
+- **Control Center dashboard grew an app-unlock control (2026-08-30).**
+  `MainWindow` now has a "desktop id + minutes + Unlock" row next to the
+  status panel — sends `omarchy-kids-agent unlock <app> --minutes N --json`
+  over the same `AgentClient`/`QThreadPool` pattern the existing status/
+  report polling already uses, then immediately re-polls so the status line
+  reflects the new unlock without waiting for the next timer tick. A
+  tier-switch control was deliberately *not* added alongside it: only the
+  "mini" tier exists at all right now (see "Current focus"), so there's
+  nothing else to switch to yet — revisit once a second tier exists.
+  Usage-stat charts are still missing. Verified for real end-to-end against
+  a freshly rebuilt dev VM (see below): clicked Unlock for
+  `org.kde.gcompris` in the live GUI, then confirmed over a separate SSH
+  session that agentd's `status --json` actually listed it in
+  `unlocked_apps` — not just that the GUI showed something.
+- **Dev VM rebuilt from scratch (2026-08-30) — the old one was stuck, not
+  salvageable.** It was found sitting at a UEFI boot device menu, never
+  reaching the OS, and `vm-snapshot.sh list` had nothing to revert to (it
+  was apparently never migrated to qcow2 NVRAM despite `docs/dev-vm-setup.md`
+  already documenting that step) — matches the doc's own framing of this VM
+  as throwaway, so it was undefined and recreated via `virt-install` per
+  `docs/dev-vm-setup.md` §4 rather than debugged. New gotcha found doing
+  this: `--boot uefi,nvram.templateFormat=qcow2` (the doc's current §4
+  command) now fails outright on this host — `ERROR operation failed:
+  Unable to find 'efi' firmware that is compatible with the current
+  configuration`. `virsh domcapabilities` reports `<varstore supported='no'/>`
+  for this host's libvirt/QEMU/edk2-ovmf combination, so qcow2-templated
+  NVRAM isn't available here at all right now, not just unmigrated on the
+  old VM — the doc's "one-time migration" gotcha section doesn't cover this
+  failure mode. Worked around by dropping `nvram.templateFormat=qcow2`
+  (plain `--boot uefi`, default raw NVRAM) — installs and boots fine, but
+  means `vm-snapshot.sh` is unusable against the new VM too until this is
+  actually root-caused. New VM: same username (`fine`), new IP
+  `192.168.122.126` (updated in `~/.ssh/config`), re-paired fresh (new
+  `control/` host entry, replacing the stale one from the old VM). Also
+  found and fixed a real bug while driving the reinstall:
+  `scripts/vm-type-de.sh` called `virsh send-key` with no `-c
+  qemu:///system`, so every keystroke silently went nowhere (defaulted to
+  `qemu:///session`, which doesn't see a system-connection domain) — the
+  script's own `>/dev/null 2>&1` swallowed the resulting "failed to get
+  domain" error, so this looked like nothing was happening rather than an
+  outright failure. Now fixed.
 - Not yet done: app installation as part of the package (nothing in the
   current line-up is installed by the package yet), the `omarkid-gcompris`
   fork itself, app-wrapper/time-tracking integration, locale implementation

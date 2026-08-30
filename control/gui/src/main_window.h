@@ -10,18 +10,23 @@
 class QListWidget;
 class QListWidgetItem;
 class QLabel;
+class QLineEdit;
 class QPushButton;
+class QSpinBox;
 class QTimer;
 
 // Minimal-but-real dashboard: a list of paired children, a status/security-
-// events panel for whichever one is selected, and a way to pair a new one
-// (see PairingDialog). Polls the selected host's `omarchy-kids-agent
-// status`/`report` over SSH (see AgentClient) on a timer; severe security
-// events get a local `notify-send` (issue #10's "active notification on the
-// parent's computer" — there was nothing on this end to deliver that to
-// before this existed). Not yet done: app-unlock/tier-switch controls and
-// usage-stat charts (see the vault note "Omarchy Kids - Implementierung
-// Control Center") — this first slice is read-only.
+// events panel for whichever one is selected, an app-unlock control, and a
+// way to pair a new one (see PairingDialog). Polls the selected host's
+// `omarchy-kids-agent status`/`report` over SSH (see AgentClient) on a
+// timer; severe security events get a local `notify-send` (issue #10's
+// "active notification on the parent's computer" — there was nothing on
+// this end to deliver that to before this existed). Tier-switch controls
+// are deliberately not added yet: only the "mini" tier exists at all right
+// now (root CLAUDE.md's "Current focus"), so a switch control would have
+// nothing meaningful to switch to. Usage-stat charts are also still
+// missing — left for a follow-up, see the vault note "Omarchy Kids -
+// Implementierung Control Center".
 class MainWindow : public QWidget {
     Q_OBJECT
 
@@ -31,6 +36,7 @@ public:
 private slots:
     void openPairingDialog();
     void pollSelectedHost();
+    void unlockSelectedApp();
 
 private:
     void refreshHostList();
@@ -44,12 +50,16 @@ private:
         bool statusOk, const QString& statusText,
         bool reportOk, const QString& reportJson);
     void notifySevereEvents(const std::string& hostName, const QString& reportJson);
+    void applyUnlockResult(const std::string& hostName, bool ok, const QString& resultJson);
 
     omarchy_kids::control::HostRegistry registry_;
     QListWidget* hostList_ = nullptr;
     QLabel* statusLabel_ = nullptr;
     QListWidget* eventsList_ = nullptr;
     QPushButton* refreshButton_ = nullptr;
+    QLineEdit* unlockAppEdit_ = nullptr;
+    QSpinBox* unlockMinutesSpin_ = nullptr;
+    QPushButton* unlockButton_ = nullptr;
     QTimer* pollTimer_ = nullptr;
 
     // Dedupes notifications: the newest `occurred_at` already surfaced for

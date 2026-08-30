@@ -25,7 +25,12 @@ dom="${1:?Usage: vm-type-de.sh <domain> <text>}"
 text="${2:?Usage: vm-type-de.sh <domain> <text>}"
 
 send() {
-  virsh send-key "$dom" --codeset linux "$@" >/dev/null 2>&1
+  # -c qemu:///system: without it, virsh defaults to qemu:///session, which
+  # doesn't see a domain created on the system connection — send-key then
+  # fails with "failed to get domain", silently swallowed by the redirect
+  # below (found 2026-08-30 rebuilding the dev VM: every keystroke was
+  # dropped with no visible error).
+  virsh -c qemu:///system send-key "$dom" --codeset linux "$@" >/dev/null 2>&1
 }
 
 for (( i=0; i<${#text}; i++ )); do

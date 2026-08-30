@@ -6,14 +6,17 @@
 #include <algorithm>
 #include <vector>
 
+#include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLineEdit>
 #include <QListWidget>
 #include <QMetaObject>
 #include <QProcess>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QString>
 #include <QStringList>
 #include <QThreadPool>
@@ -46,9 +49,25 @@ MainWindow::MainWindow(QWidget* parent) : QWidget(parent) {
     auto* pairButton = new QPushButton(tr("Pair a new child..."), this);
     connect(pairButton, &QPushButton::clicked, this, &MainWindow::openPairingDialog);
 
+    unlockAppEdit_ = new QLineEdit(this);
+    unlockAppEdit_->setPlaceholderText(tr("desktop id, e.g. org.kde.gcompris"));
+    unlockMinutesSpin_ = new QSpinBox(this);
+    unlockMinutesSpin_->setRange(1, 24 * 60);
+    unlockMinutesSpin_->setValue(30);
+    unlockMinutesSpin_->setSuffix(tr(" min"));
+    unlockButton_ = new QPushButton(tr("Unlock"), this);
+    connect(unlockButton_, &QPushButton::clicked, this, &MainWindow::unlockSelectedApp);
+
+    auto* unlockLayout = new QHBoxLayout();
+    unlockLayout->addWidget(new QLabel(tr("Unlock app:"), this));
+    unlockLayout->addWidget(unlockAppEdit_, /*stretch=*/1);
+    unlockLayout->addWidget(unlockMinutesSpin_);
+    unlockLayout->addWidget(unlockButton_);
+
     auto* layout = new QVBoxLayout(this);
     layout->addWidget(hostList_);
     layout->addWidget(statusLabel_);
+    layout->addLayout(unlockLayout);
     layout->addWidget(new QLabel(tr("Security events (this week):"), this));
     layout->addWidget(eventsList_);
     layout->addWidget(refreshButton_);
@@ -199,6 +218,66 @@ void MainWindow::applyPollResult(
     if (reportOk) {
         notifySevereEvents(hostName, reportJson);
     }
+}
+
+void MainWindow::unlockSelectedApp() {
+    const int row = hostList_->currentRow();
+    const auto& hosts = registry_.hosts();
+    if (row < 0 || row >= static_cast<int>(hosts.size())) {
+        return;
+    }
+    const QString app = unlockAppEdit_->text().trimmed();
+    if (app.isEmpty()) {
+        statusLabel_->setText(tr("Enter a desktop id to unlock (e.g. org.kde.gcompris)."));
+        return;
+    }
+
+    HostEntry hostCopy = hosts[static_cast<size_t>(row)];
+    const int minutes = unlockMinutesSpin_->value();
+    unlockButton_->setEnabled(false);
+    statusLabel_->setText(tr("Unlocking %1 on %2 ...").arg(app, QString::fromStdString(hostCopy.name)));
+
+    QThreadPool::globalInstance()->start([this, hostCopy, app, minutes]() {
+        const auto result = AgentClient::run(
+            hostCopy,
+            {"unlock", app.toStdString(), "--minutes", std::to_string(minutes), "--json"});
+
+        const std::string hostName = hostCopy.name;
+        const bool ok = result.ok;
+        const QString resultJson = QString::fromStdString(result.stdoutText);
+
+        QMetaObject::invokeMethod(
+            this,
+            [this, hostName, ok, resultJson]() { applyUnlockResult(hostName, ok, resultJson); },
+            Qt::QueuedConnection);
+    });
+}
+
+void MainWindow::applyUnlockResult(const std::string& hostName, bool ok, const QString& resultJson) {
+    unlockButton_->setEnabled(true);
+
+    const QListWidgetItem* current = hostList_->currentItem();
+    const bool isCurrentSelection =
+        current && current->data(Qt::UserRole).toString().toStdString() == hostName;
+    if (!isCurrentSelection) {
+        return;
+    }
+
+    if (!ok) {
+        statusLabel_->setText(tr("%1: unlock failed — unreachable over SSH.").arg(QString::fromStdString(hostName)));
+        return;
+    }
+    const QJsonDocument doc = QJsonDocument::fromJson(resultJson.toUtf8());
+    const QJsonObject envelope = doc.object();
+    if (!doc.isObject() || !envelope.value("ok").toBool()) {
+        statusLabel_->setText(tr("%1: unlock rejected by agentd: %2")
+                                   .arg(QString::fromStdString(hostName), envelope.value("error").toString()));
+        return;
+    }
+    unlockAppEdit_->clear();
+    // Re-poll immediately so the status line/unlocked-apps list reflects the
+    // new unlock right away instead of waiting for the next timer tick.
+    pollSelectedHost();
 }
 
 void MainWindow::notifySevereEvents(const std::string& hostName, const QString& reportJson) {
