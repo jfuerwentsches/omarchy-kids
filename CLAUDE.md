@@ -160,7 +160,6 @@ is solid. Don't start scaffolding other tiers unless asked.
   "Pairing protocol" section for the `pair` CLI's own changes (interactive
   confirmation replacing auto-confirm, `--yes` for scripting, host/port now
   printed by `serve` so the manual-entry path is actually usable).
-  `quickshell-plugin/` is still a stub/skeleton — no real logic yet.
 - **Full real end-to-end verification done (2026-08-29, closes setup-wizard
   issue #29):** not a stand-in — a fresh Omarchy VM, deferred-provisioning
   install, `omarchy-kids-*` binaries/scripts/units injected onto its disk
@@ -212,6 +211,32 @@ is solid. Don't start scaffolding other tiers unless asked.
   verification") — console-form keystroke automation is too fragile to lean
   on exclusively — they speed up iterating on the pairing protocol itself.
   See `docs/dev-vm-setup.md`'s "Fast iteration" section.
+- **`quickshell-plugin/` is no longer a stub (2026-08-30):** the parent-
+  computer headerbar plugin (`omarchy-kids.control/`, kind `bar-widget`) is
+  implemented — a bar icon that turns the bar's "needs attention" color
+  when any paired child is offline, and a click-to-open popup (`qs.Ui`'s
+  `Panel`/`KeyboardPanel`, same mechanism as Omarchy's own Dropbox/Clock bar
+  widgets) listing every paired child with an online/offline dot plus an
+  "Open Control Center" row. It never speaks SSH itself, per the trust-
+  boundary decision in `Omarchy Kids - Implementierung Control Center` —
+  it only reads `~/.config/omarchy-kids-control/status-cache.json` via a
+  `FileView`. That cache is written by a new headless poll mode,
+  `omarchy-kids-control --poll` (`control/core/`'s new `status_cache`/
+  `poll_runner`, dispatched before `QApplication` in `gui/src/main.cpp` so
+  it needs no display), meant to run periodically via a new
+  `control/packaging/systemd/omarchy-kids-control-poll.timer` — not
+  installed/enabled by anything yet, so today the cache is only as fresh as
+  the last manual `--poll` run. Verified for real: a real poll against the
+  already-paired dev-VM host wrote a real cache entry, and the plugin
+  rendered it live on the parent's own desktop (`quickshell-plugin/
+  install-dev.sh`, a dev-only installer — `control/` itself still has no
+  PKGBUILD). Also added: `control/`'s first test infrastructure (it had
+  none before, not even for `HostRegistry`/`AgentClient`) — a GTest suite
+  at `control/tests/` covering `StatusCache` (JSON escaping/round-trip,
+  full-replace-on-each-write) and `HostRegistry` (persist/reload, re-pair-
+  updates-in-place, malformed-file handling), wired into CI via `ctest`.
+  `gui/`'s Qt widgets and `AgentClient`'s SSH calls remain untested beyond
+  the existing end-to-end VM verification — a real gap, left for later.
 - Not yet done: app installation as part of the package (nothing in the
   current line-up is installed by the package yet), the `omarkid-gcompris`
   fork itself, app-wrapper/time-tracking integration, locale implementation

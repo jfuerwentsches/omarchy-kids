@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "omarchy-kids.control",
+  "name": "Omarchy Kids",
+  "version": "0.1.0",
+  "author": "Omarchy Kids",
+  "description": "Online/offline status of paired children in the bar; click opens the Control Center",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Omarchy Kids",
+    "description": "Online/offline status of paired children; click opens the Control Center",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
