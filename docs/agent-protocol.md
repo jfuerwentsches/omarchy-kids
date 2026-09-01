@@ -147,8 +147,8 @@ leaving the child host silently unreachable for pairing. See
 end-to-end: `serve` (child side, run as the child account) opens a
 time-boxed window — mDNS broadcast (`_omarchy-kids-pairing._tcp.local.`,
 discovery only, no secret in the TXT records) plus a QR-code fallback —
-accepts exactly one connection, and installs whatever public key it
-receives as the usual `command=`-restricted `authorized_keys` entry.
+accepts exactly one connection, and validates a received public key before
+installing it as the usual `command=`-restricted `authorized_keys` entry.
 `pair` is the client half of the identical protocol — originally a
 reference/test client standing in for the real Control Center, now what
 Control Center's own `PairingDialog` actually drives as a subprocess (see
@@ -171,6 +171,17 @@ rate limit: a fresh guess needs a fresh process, which needs the wizard's
 explicit retry action (see setup-wizard issue #25), not something a remote
 attacker can trigger unassisted. Verified end-to-end in the dev VM
 (2026-08-29), including SSH login through the freshly paired key.
+
+**Commit protocol (security fix, issue #34):** wire protocol v2 treats the
+fingerprint exchange as preparation, not authorization. The child validates
+the public key and calculates its fingerprint without touching
+`authorized_keys`, sends `Confirm`, and waits for `Ack { confirmed: true }`.
+Only then does it atomically replace `authorized_keys` with the restricted
+entry and send an authenticated `Committed { success: true }`. Declines,
+disconnects, malformed acknowledgements, and failed writes therefore add no
+authorized key. The client does not print `PAIR_RESULT` or otherwise report
+success until that final commit result arrives. Protocol v1 is rejected:
+its install-before-confirmation ordering cannot be retained safely.
 
 **UFW rule around the pairing window (resolved, setup-wizard issues
 #22/#23):** the pairing port (7420 by convention) has no standing UFW rule

@@ -24,9 +24,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
 use proto::{Message, SecurePayload};
 use serde_json::json;
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command as OsCommand;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -178,7 +178,17 @@ fn serve(
     let stream = accept_with_timeout(port, timeout_minutes)?;
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
 
-    match handle_connection(stream, &pairing_code, &sid, &hostname, ssh_port) {
+    let username = current_username()?;
+    let authorized_keys = authorized_keys_path()?;
+    match handle_connection(
+        stream,
+        &pairing_code,
+        &sid,
+        &hostname,
+        ssh_port,
+        &username,
+        &authorized_keys,
+    ) {
         Ok(()) => {
             println!("Pairing succeeded.");
             Ok(())
@@ -219,6 +229,8 @@ fn handle_connection(
     sid: &str,
     hostname: &str,
     ssh_port: u16,
+    username: &str,
+    authorized_keys: &Path,
 ) -> Result<()> {
     let mut reader = proto::read_stream(&stream);
     let mut writer = stream;
@@ -232,14 +244,17 @@ fn handle_connection(
     else {
         bail!("expected a Hello message first");
     };
-    if v != 1 {
+    if v != proto::PROTOCOL_VERSION {
         proto::write_message(
             &mut writer,
             &Message::Error {
                 reason: "unsupported protocol version".into(),
             },
         )?;
-        bail!("client spoke protocol version {v}, expected 1");
+        bail!(
+            "client spoke protocol version {v}, expected {}",
+            proto::PROTOCOL_VERSION
+        );
     }
     if client_sid != sid {
         proto::write_message(
@@ -283,10 +298,8 @@ fn handle_connection(
         bail!("expected a Pubkey payload");
     };
 
-    let fingerprint = install_pubkey(&pubkey)?;
-    let username = std::env::var("USER")
-        .or_else(|_| std::env::var("LOGNAME"))
-        .context("cannot determine the current user (USER/LOGNAME unset) to report to the Control Center")?;
+    let validated_key = validate_pubkey(&pubkey)?;
+    let fingerprint = validated_key.fingerprint.clone();
 
     let confirm = proto::encrypt(
         &shared_key,
@@ -294,31 +307,52 @@ fn handle_connection(
             hostname: hostname.to_string(),
             ssh_port,
             fingerprint: fingerprint.clone(),
-            username,
+            username: username.to_string(),
         },
     )?;
     proto::write_message(&mut writer, &confirm)?;
-    println!("Installed key, fingerprint: {fingerprint}");
+    println!("Validated key, fingerprint: {fingerprint}");
 
     let ack_msg = proto::read_message(&mut reader)?;
     let ack = proto::decrypt(&shared_key, &ack_msg)?;
     match ack {
         SecurePayload::Ack { confirmed: true } => {
             println!("Client confirmed the fingerprint.");
-            Ok(())
+            match install_pubkey(&validated_key, authorized_keys) {
+                Ok(()) => {
+                    let committed =
+                        proto::encrypt(&shared_key, &SecurePayload::Committed { success: true })?;
+                    proto::write_message(&mut writer, &committed)?;
+                    println!("Installed confirmed key.");
+                    Ok(())
+                }
+                Err(error) => {
+                    let failed =
+                        proto::encrypt(&shared_key, &SecurePayload::Committed { success: false })?;
+                    // Best effort: the local installation error is the primary
+                    // failure even if the peer disconnects before learning it.
+                    let _ = proto::write_message(&mut writer, &failed);
+                    Err(error).context("committing the confirmed public key")
+                }
+            }
         }
         SecurePayload::Ack { confirmed: false } => {
-            bail!("client did not confirm the fingerprint (key was still installed above)")
+            bail!("client did not confirm the fingerprint")
         }
         _ => bail!("expected an Ack payload"),
     }
 }
 
-/// Validates the incoming public key line and appends it to the child's
-/// `authorized_keys` with the `command=` restriction (see
-/// docs/agent-protocol.md — this is the actual security boundary).
-/// Idempotent: re-pairing with the same key doesn't duplicate the line.
-fn install_pubkey(pubkey: &str) -> Result<String> {
+#[derive(Debug)]
+struct ValidatedPubkey {
+    pubkey: String,
+    fingerprint: String,
+}
+
+/// Validates the incoming public key and calculates its fingerprint without
+/// touching authorized_keys. This keeps every pre-confirmation failure path
+/// free of authorization side effects.
+fn validate_pubkey(pubkey: &str) -> Result<ValidatedPubkey> {
     let pubkey = pubkey.trim();
     if pubkey.contains('\n') || pubkey.contains('\r') {
         bail!("public key contains embedded newlines, refusing to install it");
@@ -352,32 +386,67 @@ fn install_pubkey(pubkey: &str) -> Result<String> {
         .ok_or_else(|| anyhow!("could not parse fingerprint from ssh-keygen output"))?
         .to_string();
 
-    let home = std::env::var("HOME").context("HOME is not set")?;
-    let ssh_dir = std::path::Path::new(&home).join(".ssh");
-    std::fs::create_dir_all(&ssh_dir)?;
-    let authorized_keys = ssh_dir.join("authorized_keys");
+    Ok(ValidatedPubkey {
+        pubkey: pubkey.to_string(),
+        fingerprint,
+    })
+}
 
-    let existing = std::fs::read_to_string(&authorized_keys).unwrap_or_default();
-    if existing.contains(pubkey) {
-        return Ok(fingerprint); // already paired with this exact key
+fn current_username() -> Result<String> {
+    std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .context(
+        "cannot determine the current user (USER/LOGNAME unset) to report to the Control Center",
+    )
+}
+
+fn authorized_keys_path() -> Result<PathBuf> {
+    let home = std::env::var("HOME").context("HOME is not set")?;
+    Ok(Path::new(&home).join(".ssh/authorized_keys"))
+}
+
+/// Atomically installs a validated key as a command-restricted entry.
+/// Idempotent: re-pairing with the same key doesn't duplicate the line.
+fn install_pubkey(validated: &ValidatedPubkey, authorized_keys: &Path) -> Result<()> {
+    let ssh_dir = authorized_keys
+        .parent()
+        .ok_or_else(|| anyhow!("authorized_keys path has no parent"))?;
+    std::fs::create_dir_all(ssh_dir)?;
+
+    let mut existing = match std::fs::read_to_string(authorized_keys) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
+    if existing.contains(&validated.pubkey) {
+        return Ok(()); // already paired with this exact key
     }
 
     let restricted_entry = format!(
-        "command=\"/usr/bin/omarchy-kids-agent\",no-agent-forwarding,no-X11-forwarding,no-port-forwarding,restrict {pubkey}\n"
+        "command=\"/usr/bin/omarchy-kids-agent\",no-agent-forwarding,no-X11-forwarding,no-port-forwarding,restrict {}\n",
+        validated.pubkey
     );
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&authorized_keys)?;
-    file.write_all(restricted_entry.as_bytes())?;
+    if !existing.is_empty() && !existing.ends_with('\n') {
+        existing.push('\n');
+    }
+    existing.push_str(&restricted_entry);
+
+    let mut file = tempfile::NamedTempFile::new_in(ssh_dir)?;
+    file.write_all(existing.as_bytes())?;
+    file.flush()?;
+    file.as_file().sync_all()?;
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&authorized_keys, std::fs::Permissions::from_mode(0o600))?;
+        file.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
 
-    Ok(fingerprint)
+    file.persist(authorized_keys)
+        .map_err(|error| error.error)
+        .context("atomically replacing authorized_keys")?;
+    Ok(())
 }
 
 fn tempfile_with_contents(contents: &str) -> Result<tempfile::NamedTempFile> {
@@ -427,7 +496,7 @@ fn pair(
     proto::write_message(
         &mut writer,
         &Message::Hello {
-            v: 1,
+            v: proto::PROTOCOL_VERSION,
             sid: sid.to_string(),
             spake_msg: base64_encode(&client_msg),
         },
@@ -477,19 +546,15 @@ fn pair(
     proto::write_message(&mut writer, &ack)?;
 
     if !confirmed {
-        // The server already installed the key before sending its Confirm
-        // message (see handle_connection/install_pubkey) — declining here
-        // tells it the parent didn't accept, but doesn't undo that install.
-        // Revoking it needs a separate, already-trusted channel (there
-        // isn't one yet at this point), so this is a known follow-up, not
-        // something this client can fix from here.
-        bail!(
-            "fingerprint not confirmed — pairing aborted (note: the key was already installed \
-             on the child; it is not automatically removed)"
-        );
+        bail!("fingerprint not confirmed — pairing aborted without authorizing the key");
     }
 
-    println!("Try: ssh -i {} -p {ssh_port} {username}@{hostname}", key_out.display());
+    wait_for_commit(&mut reader, &shared_key)?;
+
+    println!(
+        "Try: ssh -i {} -p {ssh_port} {username}@{hostname}",
+        key_out.display()
+    );
     println!(
         "PAIR_RESULT: {}",
         json!({
@@ -504,6 +569,21 @@ fn pair(
     Ok(())
 }
 
+/// This gate is shared with the tests because returning success before this
+/// authenticated server response would recreate the client's half of #34.
+fn wait_for_commit(reader: &mut impl BufRead, shared_key: &[u8]) -> Result<()> {
+    let committed_msg =
+        proto::read_message(reader).context("waiting for the child to confirm key installation")?;
+    match proto::decrypt(shared_key, &committed_msg)? {
+        SecurePayload::Committed { success: true } => {}
+        SecurePayload::Committed { success: false } => {
+            bail!("child failed to install the confirmed key")
+        }
+        _ => bail!("expected a Committed payload"),
+    }
+    Ok(())
+}
+
 fn base64_encode(bytes: &[u8]) -> String {
     use base64::{engine::general_purpose::STANDARD, Engine};
     STANDARD.encode(bytes)
@@ -512,4 +592,212 @@ fn base64_encode(bytes: &[u8]) -> String {
 fn base64_decode(s: &str) -> Result<Vec<u8>> {
     use base64::{engine::general_purpose::STANDARD, Engine};
     STANDARD.decode(s).context("decoding base64")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::BufReader;
+    use std::sync::OnceLock;
+    use std::thread::JoinHandle;
+
+    const TEST_CODE: &str = "test-pairing-code";
+    const TEST_SID: &str = "test-session";
+
+    struct Exchange {
+        reader: BufReader<TcpStream>,
+        writer: TcpStream,
+        shared_key: Vec<u8>,
+        server: JoinHandle<Result<()>>,
+    }
+
+    fn test_pubkey() -> String {
+        static PUBKEY: OnceLock<String> = OnceLock::new();
+        PUBKEY
+            .get_or_init(|| {
+                let dir = tempfile::tempdir().expect("create key directory");
+                let key_path = dir.path().join("pairing-test-key");
+                let output = OsCommand::new("ssh-keygen")
+                    .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+                    .arg(&key_path)
+                    .output()
+                    .expect("run ssh-keygen");
+                assert!(
+                    output.status.success(),
+                    "ssh-keygen failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                std::fs::read_to_string(key_path.with_extension("pub"))
+                    .expect("read generated public key")
+                    .trim()
+                    .to_string()
+            })
+            .clone()
+    }
+
+    fn begin_exchange(authorized_keys: PathBuf) -> Exchange {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind test listener");
+        let address = listener.local_addr().expect("get listener address");
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().context("accepting test connection")?;
+            handle_connection(
+                stream,
+                TEST_CODE,
+                TEST_SID,
+                "test-child",
+                22,
+                "test-user",
+                &authorized_keys,
+            )
+        });
+
+        let writer = TcpStream::connect(address).expect("connect to test server");
+        let mut reader = proto::read_stream(&writer);
+        let (spake, client_msg) = proto::spake_start_client(TEST_CODE);
+        proto::write_message(
+            &mut &writer,
+            &Message::Hello {
+                v: proto::PROTOCOL_VERSION,
+                sid: TEST_SID.to_string(),
+                spake_msg: base64_encode(&client_msg),
+            },
+        )
+        .expect("send Hello");
+
+        let reply = proto::read_message(&mut reader).expect("read server SPAKE message");
+        let Message::SpakeMsg { spake_msg } = reply else {
+            panic!("expected server SPAKE message");
+        };
+        let shared_key = spake
+            .finish(&base64_decode(&spake_msg).expect("decode SPAKE message"))
+            .expect("finish SPAKE exchange");
+
+        let pubkey = proto::encrypt(
+            &shared_key,
+            &SecurePayload::Pubkey {
+                pubkey: test_pubkey(),
+            },
+        )
+        .expect("encrypt public key");
+        proto::write_message(&mut &writer, &pubkey).expect("send public key");
+
+        let confirm = proto::read_message(&mut reader).expect("read confirmation");
+        assert!(matches!(
+            proto::decrypt(&shared_key, &confirm).expect("decrypt confirmation"),
+            SecurePayload::Confirm { .. }
+        ));
+
+        Exchange {
+            reader,
+            writer,
+            shared_key,
+            server,
+        }
+    }
+
+    fn send_ack(exchange: &mut Exchange, confirmed: bool) {
+        let ack = proto::encrypt(&exchange.shared_key, &SecurePayload::Ack { confirmed })
+            .expect("encrypt Ack");
+        proto::write_message(&mut exchange.writer, &ack).expect("send Ack");
+    }
+
+    #[test]
+    fn accepted_pairing_installs_key_and_confirms_commit() {
+        let home = tempfile::tempdir().expect("create test home");
+        let authorized_keys = home.path().join(".ssh/authorized_keys");
+        std::fs::create_dir_all(authorized_keys.parent().expect("authorized_keys parent"))
+            .expect("create .ssh directory");
+        std::fs::write(&authorized_keys, "existing authorized key\n")
+            .expect("seed authorized_keys");
+        let mut exchange = begin_exchange(authorized_keys.clone());
+
+        send_ack(&mut exchange, true);
+        wait_for_commit(&mut exchange.reader, &exchange.shared_key)
+            .expect("client rejected successful commit");
+        exchange
+            .server
+            .join()
+            .expect("server thread panicked")
+            .expect("server rejected accepted pairing");
+
+        let installed = std::fs::read_to_string(&authorized_keys).expect("read authorized_keys");
+        assert!(installed.starts_with("existing authorized key\n"));
+        assert!(installed.contains(&test_pubkey()));
+        assert!(installed.contains("command=\"/usr/bin/omarchy-kids-agent\""));
+    }
+
+    #[test]
+    fn declined_pairing_leaves_no_authorized_key() {
+        let home = tempfile::tempdir().expect("create test home");
+        let authorized_keys = home.path().join(".ssh/authorized_keys");
+        let mut exchange = begin_exchange(authorized_keys.clone());
+
+        send_ack(&mut exchange, false);
+        let error = exchange
+            .server
+            .join()
+            .expect("server thread panicked")
+            .expect_err("server accepted a declined pairing");
+        assert!(error.to_string().contains("did not confirm"));
+        assert!(!authorized_keys.exists());
+    }
+
+    #[test]
+    fn disconnect_before_ack_leaves_no_authorized_key() {
+        let home = tempfile::tempdir().expect("create test home");
+        let authorized_keys = home.path().join(".ssh/authorized_keys");
+        let exchange = begin_exchange(authorized_keys.clone());
+
+        drop(exchange.reader);
+        drop(exchange.writer);
+        exchange
+            .server
+            .join()
+            .expect("server thread panicked")
+            .expect_err("server accepted a disconnected pairing");
+        assert!(!authorized_keys.exists());
+    }
+
+    #[test]
+    fn malformed_ack_leaves_no_authorized_key() {
+        let home = tempfile::tempdir().expect("create test home");
+        let authorized_keys = home.path().join(".ssh/authorized_keys");
+        let mut exchange = begin_exchange(authorized_keys.clone());
+        let malformed = proto::encrypt(
+            &exchange.shared_key,
+            &SecurePayload::Pubkey {
+                pubkey: test_pubkey(),
+            },
+        )
+        .expect("encrypt malformed Ack");
+        proto::write_message(&mut exchange.writer, &malformed).expect("send malformed Ack");
+
+        let error = exchange
+            .server
+            .join()
+            .expect("server thread panicked")
+            .expect_err("server accepted a malformed Ack");
+        assert!(error.to_string().contains("expected an Ack"));
+        assert!(!authorized_keys.exists());
+    }
+
+    #[test]
+    fn authorized_keys_write_failure_reports_failed_commit_and_adds_no_key() {
+        let home = tempfile::tempdir().expect("create test home");
+        let blocked_ssh_dir = home.path().join(".ssh");
+        std::fs::write(&blocked_ssh_dir, "not a directory").expect("create blocking file");
+        let authorized_keys = blocked_ssh_dir.join("authorized_keys");
+        let mut exchange = begin_exchange(authorized_keys.clone());
+
+        send_ack(&mut exchange, true);
+        let client_error = wait_for_commit(&mut exchange.reader, &exchange.shared_key)
+            .expect_err("client accepted a failed commit");
+        assert!(client_error.to_string().contains("failed to install"));
+        exchange
+            .server
+            .join()
+            .expect("server thread panicked")
+            .expect_err("server reported a successful write");
+        assert!(!authorized_keys.exists());
+    }
 }

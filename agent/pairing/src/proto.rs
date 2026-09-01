@@ -34,8 +34,12 @@ use std::net::TcpStream;
 /// just domain separation between the two sides, not part of the secret.
 const ID_CONTROL_CENTER: &[u8] = b"omarchy-kids-control-center";
 const ID_CHILD: &[u8] = b"omarchy-kids-child";
-const HKDF_INFO: &[u8] = b"omarchy-kids-pairing v1 aead-key";
+const HKDF_INFO: &[u8] = b"omarchy-kids-pairing v2 aead-key";
 const NONCE_LEN: usize = 12;
+
+/// Version 2 adds a server-to-client commit result after the client's Ack.
+/// Version 1 authorized the key before Ack and cannot be supported safely.
+pub const PROTOCOL_VERSION: u8 = 2;
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -64,9 +68,10 @@ pub enum SecurePayload {
     /// public key — see the vault note's "Kernentscheidung": the private
     /// key never leaves the machine it was generated on, encrypted or not.
     Pubkey { pubkey: String },
-    /// Server -> client: confirms the key was installed, and what to
-    /// connect to. `fingerprint` is shown to the parent for a final visual
-    /// check, on top of (not instead of) the SPAKE2 authentication.
+    /// Server -> client: confirms the key was validated, and what to
+    /// connect to if it is committed. `fingerprint` is shown to the parent
+    /// for a final visual check, on top of (not instead of) the SPAKE2
+    /// authentication.
     /// `username` is the child account `serve` ran as — without it the
     /// Control Center has no way to know which account to SSH into, since
     /// the child's username is chosen freely during Omarchy's own account
@@ -82,6 +87,9 @@ pub enum SecurePayload {
     },
     /// Client -> server: the parent confirmed the fingerprint matches.
     Ack { confirmed: bool },
+    /// Server -> client: authenticated result of the authorized_keys write.
+    /// The client must not report pairing success before receiving `true`.
+    Committed { success: bool },
 }
 
 pub fn read_message(reader: &mut impl BufRead) -> Result<Message> {
