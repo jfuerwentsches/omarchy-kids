@@ -71,6 +71,12 @@ if [[ ! -d "$HOME/.config/omarchy/themes/$THEME_NAME" ]]; then
   exit 1
 fi
 
+# Tier-specific app dependencies. --needed makes repeated tier applications
+# safe while --noconfirm keeps the setup wizard's non-interactive path usable.
+if [[ $TIER == "mini" ]]; then
+  sudo pacman -S --needed --noconfirm gcompris-qt
+fi
+
 omarchy-theme-set "$THEME_NAME"
 
 # Launcher plugin + its app list, if this tier ships one. Third-party

@@ -87,6 +87,9 @@ fi
 echo "omarchy-kids-bootstrap: setting up parent/admin account ('$ADMIN_USER')..." >&2
 create_parent_admin_account "$CHILD_USER" "$ADMIN_USER" "$ADMIN_PASSWORD"
 grant_getty_lockdown_sudo "$CHILD_USER"
+if [[ $TIER == "mini" ]]; then
+  grant_mini_packages_sudo "$CHILD_USER"
+fi
 
 echo "omarchy-kids-bootstrap: applying branding and initial tier ('$TIER')..." >&2
 apply_branding_and_tier "$CHILD_USER" "$CHILD_NAME" "$TIER" "$THEME"
