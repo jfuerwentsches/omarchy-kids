@@ -316,6 +316,7 @@ The update path is split by layer on purpose:
   update timer runs `omarchy-update -y` on a daily cadence, so the parent
   does not have to click through every package refresh. That keeps the
   kiosk usable without needing a reading child to understand update UI.
+  This is the concrete answer to issue #31's update-path question.
 - `omarchy-update` already snapshots via Snapper when snapshotting is
   configured, so the immediate recovery path is a boot back to the
   pre-update snapshot, followed by parent-visible notification/reporting.
@@ -325,7 +326,10 @@ The update path is split by layer on purpose:
   breakage is a failed update service run, a kiosk that no longer reaches
   its graphical session, or `agentd` failing to come back after reboot,
   the parent should learn about it through Control Center/dashboard
-  reporting and treat it as a maintenance event.
+  reporting and treat it as a maintenance event. This repo does not yet
+  implement automatic broken-boot detection or an auto-rollback decision
+  loop; the intended failure story for issue #50 is "detect/report,
+  then roll back manually from the pre-update snapshot if needed."
 
 ## End-to-end verification (issue #29, closed 2026-08-29)
 
