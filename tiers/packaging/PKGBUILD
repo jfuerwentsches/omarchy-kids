@@ -6,7 +6,7 @@ pkgdesc="Omarchy Kids tier configuration layer (mini tier)"
 arch=('any')
 url="https://github.com/jfuerwentsches/omarchy-kids"
 license=('MIT')
-depends=('bash' 'jq' 'procps-ng' 'sudo')
+depends=('bash' 'gcompris-qt' 'jq' 'procps-ng' 'sudo')
 source=()
 sha256sums=()
 
