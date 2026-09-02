@@ -33,6 +33,27 @@ jobs:
       - run: cargo test --workspace
         working-directory: agent
 
+  agent-audit:
+    name: agent (cargo-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent
+          key: cargo-audit
+
+      # Issue #39: check the dependency tree against the RustSec advisory
+      # database on every push/PR — a separate job (not folded into `agent`
+      # above) so a newly published advisory failing this doesn't block on
+      # or get confused with a build/lint/test failure.
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit
+        working-directory: agent
+
   control:
     name: control (CMake/Qt6)
     runs-on: ubuntu-latest

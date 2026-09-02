@@ -30,10 +30,11 @@ struct AgentCommandResult {
 // LAN-discovered pairing data or manual entry, so this must never let their
 // contents be interpreted as shell syntax.
 //
-// Not yet done: host-key verification is plain TOFU (`accept-new`), not
-// pinned to the SPAKE2-confirmed fingerprint pairing already established
-// (`host.fingerprint`) — a real gap, left for a follow-up rather than
-// blocking the dashboard's first slice on it.
+// Host-key verification is pinned to the child's real sshd host key
+// (`host.sshHostPublicKey`, captured through the SPAKE2-authenticated
+// pairing exchange — issue #33) rather than plain `accept-new` TOFU, via a
+// per-call known_hosts file (see `PinnedKnownHosts` in the .cpp). Falls
+// back to TOFU only for a host paired before that field existed.
 class AgentClient {
 public:
     static AgentCommandResult run(

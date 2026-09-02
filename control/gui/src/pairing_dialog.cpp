@@ -189,6 +189,7 @@ void PairingDialog::handleStdout() {
             entry.keyPath = obj.value("key_path").toString().toStdString();
             entry.fingerprint = obj.value("fingerprint").toString().toStdString();
             entry.pairedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODate).toStdString();
+            entry.sshHostPublicKey = obj.value("ssh_host_public_key").toString().toStdString();
 
             registry_.addHost(entry);
             resultReceived_ = true;

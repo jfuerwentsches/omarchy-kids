@@ -22,6 +22,7 @@ use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Nonce};
 use hkdf::Hkdf;
+use omarchy_kids_common::transport::{read_line_bounded, MAX_LINE_BYTES};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -74,23 +75,33 @@ pub enum SecurePayload {
     /// issue #29's real end-to-end verification: pairing itself worked,
     /// but the paired key was then unusable because nothing recorded whose
     /// authorized_keys it lived in).
+    ///
+    /// `ssh_host_public_key` is the child machine's own real sshd host key
+    /// (issue #33): SPAKE2 authenticates *this pairing exchange*, but
+    /// without also transmitting the host key through it, nothing ties that
+    /// authenticated exchange to the specific SSH host the parent will
+    /// later actually connect to — the first real SSH connection was pure
+    /// `StrictHostKeyChecking=accept-new` TOFU, unrelated to pairing trust.
+    /// Sent as the full public-key line (not just its fingerprint) so the
+    /// Control Center can pin it directly into a known_hosts file before
+    /// ever connecting, mechanically, rather than showing the parent a
+    /// second fingerprint to eyeball.
     Confirm {
         hostname: String,
         ssh_port: u16,
         fingerprint: String,
         username: String,
+        ssh_host_public_key: String,
     },
     /// Client -> server: the parent confirmed the fingerprint matches.
     Ack { confirmed: bool },
 }
 
 pub fn read_message(reader: &mut impl BufRead) -> Result<Message> {
-    let mut line = String::new();
-    let n = reader.read_line(&mut line).context("reading from peer")?;
-    if n == 0 {
-        bail!("connection closed before a message was received");
-    }
-    serde_json::from_str(line.trim_end()).context("parsing message")
+    let line = read_line_bounded(reader, MAX_LINE_BYTES)
+        .context("reading from peer")?
+        .ok_or_else(|| anyhow!("connection closed before a message was received"))?;
+    serde_json::from_str(&line).context("parsing message")
 }
 
 pub fn write_message(writer: &mut impl Write, msg: &Message) -> Result<()> {

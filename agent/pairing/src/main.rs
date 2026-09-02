@@ -116,6 +116,28 @@ fn local_hostname() -> Result<String> {
         .to_string())
 }
 
+/// Reads this machine's real sshd host public key (issue #33) — ed25519
+/// preferred, falling back to RSA if no ed25519 host key exists (older or
+/// unusually configured sshd setups). Hard-fails pairing if neither is
+/// present/readable rather than silently omitting host-key binding.
+fn read_host_public_key() -> Result<String> {
+    const CANDIDATES: &[&str] = &[
+        "/etc/ssh/ssh_host_ed25519_key.pub",
+        "/etc/ssh/ssh_host_rsa_key.pub",
+    ];
+    for path in CANDIDATES {
+        match std::fs::read_to_string(path) {
+            Ok(contents) => return Ok(contents.trim().to_string()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => bail!("reading {path}: {e}"),
+        }
+    }
+    bail!(
+        "no readable SSH host key found (tried {}); cannot bind pairing to a host key",
+        CANDIDATES.join(", ")
+    )
+}
+
 fn local_ipv4() -> Result<String> {
     for iface in if_addrs::get_if_addrs().context("enumerating network interfaces")? {
         if iface.is_loopback() {
@@ -175,36 +197,47 @@ fn serve(
     }
     println!("{}", qr::render_unicode(&qr_payload)?);
 
-    let stream = accept_with_timeout(port, timeout_minutes)?;
-    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
-
-    match handle_connection(stream, &pairing_code, &sid, &hostname, ssh_port) {
-        Ok(()) => {
-            println!("Pairing succeeded.");
-            Ok(())
-        }
-        Err(e) => {
-            eprintln!("Pairing failed: {e:#}");
-            Err(e)
-        }
-    }
-}
-
-fn accept_with_timeout(port: u16, timeout_minutes: u32) -> Result<TcpStream> {
+    // Bound once for the whole window (issue #37): a single bad connection
+    // (malformed message, wrong code, mid-exchange disconnect) must not end
+    // the pairing window early and force the parent to reopen it — only a
+    // *successful* pairing or the overall timeout ends `serve`.
     let listener = TcpListener::bind(("0.0.0.0", port))
         .with_context(|| format!("binding the pairing listener on port {port}"))?;
     listener.set_nonblocking(true)?;
     let deadline = Instant::now() + Duration::from_secs(timeout_minutes as u64 * 60);
 
     loop {
+        let Some(stream) = accept_until(&listener, deadline)? else {
+            bail!("timed out waiting for a pairing connection ({timeout_minutes} min)");
+        };
+        stream.set_read_timeout(Some(Duration::from_secs(30)))?;
+
+        match handle_connection(stream, &pairing_code, &sid, &hostname, ssh_port) {
+            Ok(()) => {
+                println!("Pairing succeeded.");
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("Pairing attempt failed, keeping the window open: {e:#}");
+            }
+        }
+    }
+}
+
+/// Accepts one connection, or returns `Ok(None)` once `deadline` passes
+/// without one arriving. A per-connection I/O error (as opposed to a
+/// protocol-level failure, which `handle_connection` itself reports) is
+/// still surfaced to the caller rather than silently retried forever.
+fn accept_until(listener: &TcpListener, deadline: Instant) -> Result<Option<TcpStream>> {
+    loop {
         match listener.accept() {
             Ok((stream, _addr)) => {
                 stream.set_nonblocking(false)?;
-                return Ok(stream);
+                return Ok(Some(stream));
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 if Instant::now() >= deadline {
-                    bail!("timed out waiting for a pairing connection ({timeout_minutes} min)");
+                    return Ok(None);
                 }
                 std::thread::sleep(Duration::from_millis(200));
             }
@@ -283,10 +316,15 @@ fn handle_connection(
         bail!("expected a Pubkey payload");
     };
 
-    let fingerprint = install_pubkey(&pubkey)?;
+    // Validate and compute the fingerprint only — deliberately does NOT
+    // touch authorized_keys yet (issue #34): a decline or a dropped
+    // connection before the Ack arrives must leave no trace of this
+    // attempt. The key is only persisted after a confirmed Ack, below.
+    let fingerprint = validate_and_fingerprint(&pubkey)?;
     let username = std::env::var("USER")
         .or_else(|_| std::env::var("LOGNAME"))
         .context("cannot determine the current user (USER/LOGNAME unset) to report to the Control Center")?;
+    let ssh_host_public_key = read_host_public_key()?;
 
     let confirm = proto::encrypt(
         &shared_key,
@@ -295,30 +333,31 @@ fn handle_connection(
             ssh_port,
             fingerprint: fingerprint.clone(),
             username,
+            ssh_host_public_key,
         },
     )?;
     proto::write_message(&mut writer, &confirm)?;
-    println!("Installed key, fingerprint: {fingerprint}");
 
     let ack_msg = proto::read_message(&mut reader)?;
     let ack = proto::decrypt(&shared_key, &ack_msg)?;
     match ack {
         SecurePayload::Ack { confirmed: true } => {
-            println!("Client confirmed the fingerprint.");
+            write_to_authorized_keys(&pubkey)?;
+            println!("Client confirmed the fingerprint. Installed key: {fingerprint}");
             Ok(())
         }
         SecurePayload::Ack { confirmed: false } => {
-            bail!("client did not confirm the fingerprint (key was still installed above)")
+            bail!("client did not confirm the fingerprint (key was never installed)")
         }
         _ => bail!("expected an Ack payload"),
     }
 }
 
-/// Validates the incoming public key line and appends it to the child's
-/// `authorized_keys` with the `command=` restriction (see
-/// docs/agent-protocol.md — this is the actual security boundary).
-/// Idempotent: re-pairing with the same key doesn't duplicate the line.
-fn install_pubkey(pubkey: &str) -> Result<String> {
+/// Rejects anything that isn't plausibly a real SSH public key and returns
+/// its fingerprint, without writing anything to disk. Split out from
+/// `write_to_authorized_keys` (issue #34) so `handle_connection` can show the
+/// parent a fingerprint to confirm before ever installing the key.
+fn validate_and_fingerprint(pubkey: &str) -> Result<String> {
     let pubkey = pubkey.trim();
     if pubkey.contains('\n') || pubkey.contains('\r') {
         bail!("public key contains embedded newlines, refusing to install it");
@@ -351,7 +390,16 @@ fn install_pubkey(pubkey: &str) -> Result<String> {
         .find(|tok| tok.starts_with("SHA256:"))
         .ok_or_else(|| anyhow!("could not parse fingerprint from ssh-keygen output"))?
         .to_string();
+    Ok(fingerprint)
+}
 
+/// Appends the (already-validated) public key to the child's
+/// `authorized_keys` with the `command=` restriction (see
+/// docs/agent-protocol.md — this is the actual security boundary). Only
+/// ever called after a confirmed Ack (issue #34). Idempotent: re-pairing
+/// with the same key doesn't duplicate the line.
+fn write_to_authorized_keys(pubkey: &str) -> Result<()> {
+    let pubkey = pubkey.trim();
     let home = std::env::var("HOME").context("HOME is not set")?;
     let ssh_dir = std::path::Path::new(&home).join(".ssh");
     std::fs::create_dir_all(&ssh_dir)?;
@@ -359,7 +407,7 @@ fn install_pubkey(pubkey: &str) -> Result<String> {
 
     let existing = std::fs::read_to_string(&authorized_keys).unwrap_or_default();
     if existing.contains(pubkey) {
-        return Ok(fingerprint); // already paired with this exact key
+        return Ok(()); // already paired with this exact key
     }
 
     let restricted_entry = format!(
@@ -377,7 +425,7 @@ fn install_pubkey(pubkey: &str) -> Result<String> {
         std::fs::set_permissions(&authorized_keys, std::fs::Permissions::from_mode(0o600))?;
     }
 
-    Ok(fingerprint)
+    Ok(())
 }
 
 fn tempfile_with_contents(contents: &str) -> Result<tempfile::NamedTempFile> {
@@ -453,11 +501,12 @@ fn pair(
             ssh_port,
             fingerprint,
             username,
-        }) => (hostname, ssh_port, fingerprint, username),
+            ssh_host_public_key,
+        }) => (hostname, ssh_port, fingerprint, username, ssh_host_public_key),
         Ok(_) => bail!("expected a Confirm payload"),
         Err(e) => bail!("decrypting the server's confirmation failed (wrong code?): {e:#}"),
     };
-    let (hostname, ssh_port, fingerprint, username) = confirm;
+    let (hostname, ssh_port, fingerprint, username, ssh_host_public_key) = confirm;
 
     println!("Paired with {hostname} (SSH port {ssh_port}).");
     println!("Key fingerprint: {fingerprint}");
@@ -477,19 +526,32 @@ fn pair(
     proto::write_message(&mut writer, &ack)?;
 
     if !confirmed {
-        // The server already installed the key before sending its Confirm
-        // message (see handle_connection/install_pubkey) — declining here
-        // tells it the parent didn't accept, but doesn't undo that install.
-        // Revoking it needs a separate, already-trusted channel (there
-        // isn't one yet at this point), so this is a known follow-up, not
-        // something this client can fix from here.
-        bail!(
-            "fingerprint not confirmed — pairing aborted (note: the key was already installed \
-             on the child; it is not automatically removed)"
-        );
+        // The server only installs the key after a confirmed Ack (see
+        // handle_connection/write_to_authorized_keys, issue #34) — declining
+        // here means the key was never written to the child's
+        // authorized_keys at all, nothing to undo.
+        bail!("fingerprint not confirmed — pairing aborted (key was never installed on the child)");
     }
 
-    println!("Try: ssh -i {} -p {ssh_port} {username}@{hostname}", key_out.display());
+    // Pins the child's real sshd host key ahead of the first real SSH
+    // connection (issue #33), instead of relying on
+    // `StrictHostKeyChecking=accept-new` TOFU: the key came through the
+    // SPAKE2-authenticated pairing exchange, so it's trustworthy the moment
+    // pairing succeeds, not just "whatever answered first." A real Control
+    // Center does the equivalent in `control/core/src/agent_client.cpp`;
+    // this reference CLI just demonstrates the mechanism by writing a
+    // ready-to-use known_hosts file next to the generated key.
+    let known_hosts_path = format!("{}.known_hosts", key_out.display());
+    let known_hosts_contents = format!(
+        "{hostname} {ssh_host_public_key}\n[{hostname}]:{ssh_port} {ssh_host_public_key}\n"
+    );
+    std::fs::write(&known_hosts_path, known_hosts_contents)
+        .with_context(|| format!("writing {known_hosts_path}"))?;
+
+    println!(
+        "Try: ssh -o UserKnownHostsFile={known_hosts_path} -i {} -p {ssh_port} {username}@{hostname}",
+        key_out.display()
+    );
     println!(
         "PAIR_RESULT: {}",
         json!({
@@ -498,6 +560,8 @@ fn pair(
             "fingerprint": fingerprint,
             "key_path": key_out.to_string_lossy(),
             "username": username,
+            "ssh_host_public_key": ssh_host_public_key,
+            "known_hosts_path": known_hosts_path,
         })
     );
 

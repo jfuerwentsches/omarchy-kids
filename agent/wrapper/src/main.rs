@@ -21,6 +21,25 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
 
+    let socket = paths::socket_path();
+    // Authorize *before* ever resolving/spawning anything (issue #35) — the
+    // previous design spawned first and only found out via the first poll,
+    // up to POLL_INTERVAL later, that the app wasn't allowed. Unlike the
+    // fail-open WrapperStart/Stop/Poll notifications below, this check
+    // fails closed: an unreachable agentd means nothing launches, not
+    // "anything goes" — see the doc comment on `Request::WrapperAuthorize`.
+    match authorize(&socket, &desktop_id) {
+        Ok(true) => {}
+        Ok(false) => {
+            eprintln!("omarchy-kids-run: '{desktop_id}' is not authorized to launch");
+            return ExitCode::FAILURE;
+        }
+        Err(err) => {
+            eprintln!("omarchy-kids-run: refusing to launch '{desktop_id}': {err}");
+            return ExitCode::FAILURE;
+        }
+    }
+
     let Some(desktop_file) = desktop::find_desktop_file(&desktop_id) else {
         eprintln!("omarchy-kids-run: no .desktop entry found for '{desktop_id}'");
         return ExitCode::FAILURE;
@@ -49,7 +68,6 @@ fn main() -> ExitCode {
         }
     };
     let pid = child.id();
-    let socket = paths::socket_path();
 
     report(
         &socket,
@@ -92,6 +110,26 @@ fn main() -> ExitCode {
     );
 
     ExitCode::SUCCESS
+}
+
+/// Fail-closed pre-launch check (issue #35) — the opposite policy from
+/// `report`/`still_allowed` below on purpose: those cover an
+/// already-running, already-authorized session (an agentd outage shouldn't
+/// kill it), whereas this gates whether anything launches at all.
+fn authorize(socket: &std::path::Path, app: &str) -> Result<bool, String> {
+    let req = Request::WrapperAuthorize {
+        app: app.to_string(),
+    };
+    match transport::send(socket, &req, AGENTD_TIMEOUT) {
+        Ok(resp) if resp.ok => Ok(resp
+            .data
+            .and_then(|d| d.get("allowed").and_then(|v| v.as_bool()))
+            .unwrap_or(false)),
+        Ok(resp) => Err(resp
+            .error
+            .unwrap_or_else(|| "agentd rejected the authorization check".to_string())),
+        Err(err) => Err(format!("could not reach agentd ({err})")),
+    }
 }
 
 /// Fail-open (issue #6): if agentd is unreachable, the app keeps running

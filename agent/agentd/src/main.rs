@@ -3,6 +3,7 @@
 //! account). Owns time-budget enforcement, the app-wrapper event socket, the
 //! PIN/polkit override path, and the SQLite usage log.
 
+mod allowlist;
 mod budget;
 mod db;
 mod handlers;
@@ -16,11 +17,24 @@ use anyhow::{Context, Result};
 use omarchy_kids_common::config::Config;
 use omarchy_kids_common::paths;
 use omarchy_kids_common::protocol::{Request, Response};
-use std::io::{BufRead, BufReader, Write};
+use omarchy_kids_common::transport::{read_line_bounded, MAX_LINE_BYTES};
+use std::io::{BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+/// Caps how many connection-handling threads can be alive at once (issue
+/// #36) — each is short-lived (one request/response, then it exits), so this
+/// only guards against a flood of slow/idle connections pinning down
+/// unbounded threads; it isn't a normal-usage limit.
+const MAX_CONCURRENT_CONNECTIONS: usize = 32;
+/// A connection that neither sends its request line nor reads its response
+/// within this long is dropped (issue #36) — real requests are one
+/// round-trip of small JSON, answered well within a second.
+const CONNECTION_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
 
 use state::State;
 
@@ -47,6 +61,8 @@ fn main() -> Result<()> {
 
     ticker::spawn(Arc::clone(&state));
 
+    let active_connections = Arc::new(AtomicUsize::new(0));
+
     for incoming in listener.incoming() {
         let stream = match incoming {
             Ok(s) => s,
@@ -55,8 +71,20 @@ fn main() -> Result<()> {
                 continue;
             }
         };
+        if active_connections.load(Ordering::Relaxed) >= MAX_CONCURRENT_CONNECTIONS {
+            eprintln!(
+                "omarchy-kids-agentd: at the concurrent-connection limit ({MAX_CONCURRENT_CONNECTIONS}), dropping a connection"
+            );
+            drop(stream);
+            continue;
+        }
+        active_connections.fetch_add(1, Ordering::Relaxed);
         let state = Arc::clone(&state);
-        std::thread::spawn(move || handle_connection(stream, &state));
+        let active_connections = Arc::clone(&active_connections);
+        std::thread::spawn(move || {
+            handle_connection(stream, &state);
+            active_connections.fetch_sub(1, Ordering::Relaxed);
+        });
     }
     Ok(())
 }
@@ -83,18 +111,28 @@ fn bind_socket(path: &Path) -> Result<UnixListener> {
 }
 
 fn handle_connection(stream: UnixStream, state: &Arc<Mutex<State>>) {
+    if stream.set_read_timeout(Some(CONNECTION_IDLE_TIMEOUT)).is_err()
+        || stream.set_write_timeout(Some(CONNECTION_IDLE_TIMEOUT)).is_err()
+    {
+        return;
+    }
+
     let mut reader = match stream.try_clone() {
         Ok(s) => BufReader::new(s),
         Err(_) => return,
     };
     let mut writer = stream;
 
-    let mut line = String::new();
-    if reader.read_line(&mut line).unwrap_or(0) == 0 {
-        return; // client disconnected without sending anything
-    }
+    let line = match read_line_bounded(&mut reader, MAX_LINE_BYTES) {
+        Ok(Some(line)) => line,
+        Ok(None) => return, // client disconnected without sending anything
+        Err(e) => {
+            eprintln!("omarchy-kids-agentd: rejecting connection: {e}");
+            return;
+        }
+    };
 
-    let response = match serde_json::from_str::<Request>(line.trim_end()) {
+    let response = match serde_json::from_str::<Request>(&line) {
         Ok(req) => handlers::dispatch(state, req),
         Err(e) => Response::err(format!("malformed request: {e}")),
     };

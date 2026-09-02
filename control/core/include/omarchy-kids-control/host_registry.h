@@ -21,6 +21,14 @@ struct HostEntry {
     std::string keyPath;     // private key path (public half is <keyPath>.pub)
     std::string fingerprint; // SHA256 fingerprint shown/confirmed at pairing time
     std::string pairedAt;    // ISO 8601 timestamp
+    // The child's real sshd host public key, as reported through the
+    // SPAKE2-authenticated pairing exchange (issue #33) — the full
+    // `<keytype> <base64key>` line, not just a fingerprint, so AgentClient
+    // can pin it into a known_hosts file before the first real SSH
+    // connection instead of relying on `StrictHostKeyChecking=accept-new`
+    // TOFU. Empty for hosts paired before this field existed; AgentClient
+    // falls back to accept-new TOFU for those (see its own comment).
+    std::string sshHostPublicKey;
 };
 
 // Manages the list of known child hosts, persisted as TOML at

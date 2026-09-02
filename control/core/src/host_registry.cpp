@@ -59,6 +59,7 @@ void HostRegistry::load() {
         entry.keyPath = (*t)["key_path"].value_or("");
         entry.fingerprint = (*t)["fingerprint"].value_or("");
         entry.pairedAt = (*t)["paired_at"].value_or("");
+        entry.sshHostPublicKey = (*t)["ssh_host_public_key"].value_or("");
         hosts_.push_back(std::move(entry));
     }
 }
@@ -76,6 +77,7 @@ void HostRegistry::save() const {
         t.insert("key_path", h.keyPath);
         t.insert("fingerprint", h.fingerprint);
         t.insert("paired_at", h.pairedAt);
+        t.insert("ssh_host_public_key", h.sshHostPublicKey);
         hostsArray.push_back(std::move(t));
     }
 

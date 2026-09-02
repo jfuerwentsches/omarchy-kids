@@ -34,6 +34,15 @@ pub fn launcher_apps_path() -> PathBuf {
     config_dir().join("launcher-apps.json")
 }
 
+/// Parent-curated list of desktop ids `Unlock` is allowed to grant (issue
+/// #32) — deliberately separate from `config.toml`'s `apps.base`/`unlocked`,
+/// which agentd itself rewrites; this file is meant to be authored/edited by
+/// the parent (today: by hand or via a future Control Center control, not
+/// wired up yet) and is only ever read, never written, by agentd.
+pub fn unlockable_apps_path() -> PathBuf {
+    config_dir().join("unlockable-apps.toml")
+}
+
 pub fn data_dir() -> PathBuf {
     home().join(".local/share/omarchy-kids")
 }

@@ -1,8 +1,9 @@
-use crate::{budget, db, launcher, security};
+use crate::{allowlist, budget, db, launcher, security};
 use crate::state::{ActiveSession, State};
 use chrono::{Datelike, Duration as ChronoDuration, Local, Utc};
 use omarchy_kids_common::config::UnlockedApp;
 use omarchy_kids_common::desktop;
+use omarchy_kids_common::paths;
 use omarchy_kids_common::protocol::{
     AllowedPayload, AppUsage, DEFAULT_UNLOCK_MINUTES, Request, Response, ReportPayload,
     SecurityEventSummary, StatusPayload,
@@ -16,6 +17,16 @@ use std::sync::{Arc, Mutex};
 const SEVERE_OVERRIDE_FAILURE_THRESHOLD: u32 = 3;
 const OVERRIDE_FAILURE_WINDOW_MINUTES: i64 = 5;
 
+/// Tiers agentd will accept for `SetTier` (issue #32). `SetTier`'s only real
+/// caller (`omarchy-kids-set-tier`, invoked via `sudo -u <child>` — see
+/// `setup-wizard/bootstrap/lib/branding-tier.sh`) runs at the child's own
+/// uid, same as any other local process, so the socket can't distinguish a
+/// legitimate tier switch from a malicious one by caller identity alone.
+/// This enumeration plus the per-tile validation below is the accepted
+/// mitigation: content is validated, the caller isn't. Matches CLAUDE.md's
+/// "Current focus" — extend this when a second tier actually ships.
+const KNOWN_TIERS: &[&str] = &["mini"];
+
 pub fn dispatch(state: &Arc<Mutex<State>>, req: Request) -> Response {
     match req {
         Request::Ping => Response::ok_empty(),
@@ -25,6 +36,7 @@ pub fn dispatch(state: &Arc<Mutex<State>>, req: Request) -> Response {
         Request::Override { app, minutes } => handle_unlock(state, app, minutes, true),
         Request::OverrideFailed { app } => handle_override_failed(state, app),
         Request::Report { week } => handle_report(state, week),
+        Request::WrapperAuthorize { app } => handle_wrapper_authorize(state, app),
         Request::WrapperStart { app, pid } => handle_wrapper_start(state, app, pid),
         Request::WrapperStop {
             app,
@@ -75,6 +87,20 @@ fn handle_set_tier(
     tier: String,
     apps: Option<Vec<omarchy_kids_common::config::AppTile>>,
 ) -> Response {
+    if !KNOWN_TIERS.contains(&tier.as_str()) {
+        return Response::err(format!("unknown tier '{tier}'"));
+    }
+    if let Some(apps) = &apps {
+        for tile in apps {
+            if desktop::find_desktop_file(&tile.desktop_id).is_none() {
+                return Response::err(format!(
+                    "refusing to set tier: '{}' does not resolve to an installed application",
+                    tile.desktop_id
+                ));
+            }
+        }
+    }
+
     let mut state = state.lock().unwrap();
     state.config.tier.current = tier;
     if let Some(apps) = apps {
@@ -107,12 +133,29 @@ fn tile_metadata_for(desktop_id: &str) -> (String, String, String) {
     )
 }
 
+/// `Unlock` (unauthenticated at the socket layer) may only grant an app on
+/// the parent-curated allow-list; `Override` is exempt because it's only
+/// ever sent after a live polkit admin authentication has already happened
+/// (see `agent/agent/src/main.rs`'s `run_override`) — a stronger, in-the-
+/// moment authorization the allow-list doesn't need to duplicate.
+fn unlock_is_permitted(app: &str, via_override: bool, allowlist: &[String]) -> bool {
+    via_override || allowlist.iter().any(|a| a == app)
+}
+
 fn handle_unlock(
     state: &Arc<Mutex<State>>,
     app: String,
     minutes: Option<u32>,
     via_override: bool,
 ) -> Response {
+    let allowed_apps = allowlist::load(&paths::unlockable_apps_path());
+    if !unlock_is_permitted(&app, via_override, &allowed_apps) {
+        return Response::err(format!(
+            "'{app}' is not on the parent-curated unlockable-apps list ({})",
+            paths::unlockable_apps_path().display()
+        ));
+    }
+
     let minutes = minutes.unwrap_or(DEFAULT_UNLOCK_MINUTES);
     let (label, icon, swatch) = tile_metadata_for(&app);
 
@@ -209,20 +252,21 @@ fn handle_wrapper_stop(state: &Arc<Mutex<State>>, app: String, pid: u32) -> Resp
     Response::ok_empty()
 }
 
-fn handle_wrapper_poll(state: &Arc<Mutex<State>>, app: String, _pid: u32) -> Response {
-    let state = state.lock().unwrap();
+/// Shared by `WrapperAuthorize` (checked *before* a launch, issue #35) and
+/// `WrapperPoll` (checked periodically while already running) — same
+/// allow-list/budget/window rules apply either way, only the pid-keyed
+/// session accounting differs (and neither of these actually needs the pid).
+fn check_allowed(state: &State, app: &str) -> AllowedPayload {
     let now_utc = Utc::now();
     let now_local = Local::now();
 
-    let disallow = |reason: &str| {
-        Response::ok_with(AllowedPayload {
-            allowed: false,
-            reason: Some(reason.to_string()),
-        })
+    let disallow = |reason: &str| AllowedPayload {
+        allowed: false,
+        reason: Some(reason.to_string()),
     };
 
-    if !state.config.is_app_allowed(&app) {
-        return disallow("app is no longer unlocked");
+    if !state.config.is_app_allowed(app) {
+        return disallow("app is not (or no longer) unlocked");
     }
     if budget::in_blocked_window(&state.config, now_local) {
         // Time windows get no grace buffer — hard cutoff, per design note.
@@ -241,22 +285,29 @@ fn handle_wrapper_poll(state: &Arc<Mutex<State>>, app: String, _pid: u32) -> Res
             return disallow("daily time budget exhausted");
         }
     }
-    if let Some(limit) = state
-        .config
-        .per_app_minutes_today(&app, now_local.weekday())
-    {
+    if let Some(limit) = state.config.per_app_minutes_today(app, now_local.weekday()) {
         let used =
-            budget::compute_app_used_minutes(&state.db, &state.active, &app, midnight, now_utc)
+            budget::compute_app_used_minutes(&state.db, &state.active, app, midnight, now_utc)
                 .unwrap_or(0);
         if used > limit + budget::GRACE_MINUTES {
             return disallow("per-app time budget exhausted");
         }
     }
 
-    Response::ok_with(AllowedPayload {
+    AllowedPayload {
         allowed: true,
         reason: None,
-    })
+    }
+}
+
+fn handle_wrapper_authorize(state: &Arc<Mutex<State>>, app: String) -> Response {
+    let state = state.lock().unwrap();
+    Response::ok_with(check_allowed(&state, &app))
+}
+
+fn handle_wrapper_poll(state: &Arc<Mutex<State>>, app: String, _pid: u32) -> Response {
+    let state = state.lock().unwrap();
+    Response::ok_with(check_allowed(&state, &app))
 }
 
 fn handle_report(state: &Arc<Mutex<State>>, week: bool) -> Response {
@@ -308,4 +359,36 @@ fn handle_report(state: &Arc<Mutex<State>>, week: bool) -> Response {
         pin_override_count,
         security_events,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unlock_rejects_apps_not_on_the_allowlist() {
+        let allowed = vec!["org.kde.gcompris".to_string()];
+        assert!(!unlock_is_permitted("org.gnome.Terminal", false, &allowed));
+        assert!(!unlock_is_permitted("org.gnome.Terminal", false, &[]));
+    }
+
+    #[test]
+    fn unlock_permits_apps_on_the_allowlist() {
+        let allowed = vec!["org.kde.gcompris".to_string()];
+        assert!(unlock_is_permitted("org.kde.gcompris", false, &allowed));
+    }
+
+    #[test]
+    fn override_bypasses_the_allowlist() {
+        // Override is only ever sent after a live polkit admin
+        // authentication (see run_override in agent/agent/src/main.rs) — a
+        // stronger, in-the-moment check the allow-list doesn't need to gate.
+        assert!(unlock_is_permitted("anything", true, &[]));
+    }
+
+    #[test]
+    fn known_tiers_rejects_unrecognized_names() {
+        assert!(!KNOWN_TIERS.contains(&"midi"));
+        assert!(KNOWN_TIERS.contains(&"mini"));
+    }
 }
