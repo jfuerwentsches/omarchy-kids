@@ -134,6 +134,39 @@ ask_language() {
   language=$(gum choose --header "Language / Sprache" <<<$'de\nen') && printf '%s' "$language"
 }
 
+# ask_admin_password
+#
+# The parent needs to know this password immediately instead of getting a
+# one-time printout later. Prompt twice, both hidden, so a typo is caught
+# before bootstrap touches the admin account.
+ask_admin_password() {
+  local password confirm
+  while true; do
+    password=$(gum input --password --prompt.foreground="$PROMPT_COLOR" --prompt "Parent admin password> ") || {
+      echo "A password is required to continue." >&2
+      continue
+    }
+
+    confirm=$(gum input --password --prompt.foreground="$PROMPT_COLOR" --prompt "Confirm password> ") || {
+      echo "Password confirmation is required to continue." >&2
+      continue
+    }
+
+    if [[ -z $password ]]; then
+      echo "Password cannot be empty." >&2
+      continue
+    fi
+
+    if [[ $password != "$confirm" ]]; then
+      echo "Passwords do not match. Please try again." >&2
+      continue
+    fi
+
+    printf '%s' "$password"
+    return 0
+  done
+}
+
 # open_pairing_ufw_rule / close_pairing_ufw_rule
 #
 # Found missing during pairing verification (vault note "Omarchy Kids -
@@ -218,9 +251,10 @@ TIERS="$(discover_tiers)"
 CHILD_NAME="$(ask_child_name)"
 TIER="$(ask_tier "$TIERS")"
 LANGUAGE="$(ask_language)"
+ADMIN_PASSWORD="$(ask_admin_password)"
 
 echo "omarchy-kids-setup-wizard: running bootstrap for '$CHILD_USER' (tier '$TIER')..." >&2
-omarchy-kids-bootstrap --child-user "$CHILD_USER" --child-name "$CHILD_NAME" --tier "$TIER"
+omarchy-kids-bootstrap --child-user "$CHILD_USER" --child-name "$CHILD_NAME" --tier "$TIER" --admin-password "$ADMIN_PASSWORD"
 
 run_pairing "$CHILD_USER"
 

@@ -14,9 +14,10 @@
 #     [--admin-user <name>] \
 #     [--admin-password <password>]
 #
-# --admin-user defaults to omarchy-kids-parent. --admin-password defaults
-# to a generated one, printed once — Phase 1 has no UI to prompt for it
-# interactively (see lib/account.sh); Phase 2's form replaces this.
+# --admin-user defaults to omarchy-kids-parent. --admin-password still has
+# a non-interactive fallback for direct bootstrap runs, but the first-boot
+# form now prompts for it interactively with confirmation (see
+# setup-wizard/first-boot/ and lib/account.sh).
 #
 # Must run as root: creates a Linux account and writes into another
 # account's home directory.
