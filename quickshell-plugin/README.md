@@ -23,15 +23,14 @@ Parent-computer headerbar plugin (QML, Quickshell's plugin mechanism, kind
 - Also reachable via `omarchy-shell omarchy-kids.control open/close/toggle`
   (the `Panel` base's IPC handler, `ipcTarget: "omarchy-kids.control"`).
 
-**Not yet packaged/auto-installed anywhere** — `control/` itself has no
-PKGBUILD yet (see root CLAUDE.md "Status"). For dev testing on your own
-Omarchy desktop, `./install-dev.sh` copies the plugin into
+Packaged as `omarchy-kids-quickshell-plugin`. The installed
+`omarchy-kids-quickshell-plugin-enable` helper copies the plugin into
 `~/.config/omarchy/plugins/` and adds it to `shell.json`'s
-`bar.layout.right` (a bar-widget's real placement — unlike overlay/menu
+`bar.layout.right` (a bar-widget's real placement - unlike overlay/menu
 plugins, being listed in top-level `plugins[]` alone doesn't render it in
 the bar, see `PluginRegistry.qml`'s `setEnabled()`), then restarts
 Quickshell.
 
-Not yet done: the systemd timer isn't installed/enabled by anything yet
-(packaging gap, same as the binaries it polls) — until then, the cache is
-only as fresh as the last manual `omarchy-kids-control --poll`.
+The systemd timer still lives with `control/`'s package; until that package
+is installed, the cache is only as fresh as the last manual
+`omarchy-kids-control --poll`.

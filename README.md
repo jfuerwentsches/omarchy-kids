@@ -23,6 +23,8 @@ See `docs/` for the architecture write-up once it lands (ported from the project
 | `docs/` | — | Architecture docs, roadmap. |
 | `website/` | HTML/CSS | Landing page for omarchy-kids.com (English + German). |
 
+See [`docs/packaging.md`](docs/packaging.md) for the packaging path convention shared by `agent/`, `tiers/`, `control/`, `quickshell-plugin/`, and `setup-wizard/`.
+
 ## License
 
 MIT — see `LICENSE`.

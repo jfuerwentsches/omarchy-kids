@@ -1,0 +1,15 @@
+pkgbase = omarchy-kids-setup-wizard
+	pkgdesc = Omarchy Kids setup wizard and bootstrap scripts
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/jfuerwentsches/omarchy-kids
+	arch = any
+	license = MIT
+	depends = bash
+	depends = gum
+	depends = jq
+	depends = sudo
+	depends = omarchy-kids-tiers
+	depends = omarchy-kids-agent
+
+pkgname = omarchy-kids-setup-wizard

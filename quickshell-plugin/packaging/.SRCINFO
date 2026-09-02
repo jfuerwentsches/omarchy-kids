@@ -1,0 +1,13 @@
+pkgbase = omarchy-kids-quickshell-plugin
+	pkgdesc = Omarchy Kids Quickshell bar widget and enable helper
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/jfuerwentsches/omarchy-kids
+	arch = any
+	license = MIT
+	depends = bash
+	depends = jq
+	depends = omarchy-kids-control
+	depends = quickshell
+
+pkgname = omarchy-kids-quickshell-plugin

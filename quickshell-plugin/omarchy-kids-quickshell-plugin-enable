@@ -1,0 +1,27 @@
+#!/bin/bash
+# Installs the Omarchy Kids Quickshell bar widget into a user's Omarchy
+# config and enables it in shell.json.
+set -euo pipefail
+
+PLUGIN_ID="omarchy-kids.control"
+SOURCE_DIR="${OMARCHY_KIDS_QUICKSHELL_PLUGIN_SOURCE_DIR:-/usr/share/omarchy-kids/quickshell-plugin/$PLUGIN_ID}"
+
+mkdir -p "$HOME/.config/omarchy/plugins"
+rm -rf "$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+cp -r "$SOURCE_DIR" "$HOME/.config/omarchy/plugins/$PLUGIN_ID"
+
+SHELL_JSON="$HOME/.config/omarchy/shell.json"
+[[ -f $SHELL_JSON ]] || echo '{}' > "$SHELL_JSON"
+
+tmp_json="$(mktemp)"
+jq --arg id "$PLUGIN_ID" '
+  .bar.layout.right = ((.bar.layout.right // []) | if any(.id == $id) then . else . + [{id: $id}] end)
+' "$SHELL_JSON" > "$tmp_json" && mv "$tmp_json" "$SHELL_JSON"
+
+# Same reload trick as omarchy-kids-set-tier: Quickshell's own live plugin
+# reload has been observed hanging onto a stale layout after a plugin's
+# first install, a full restart is more reliable. It respawns via Hyprland
+# autostart.
+pkill -f 'quickshell -n -p' >/dev/null 2>&1 || true
+
+echo "Installed $PLUGIN_ID into $HOME/.config/omarchy/plugins and shell.json's bar.layout.right."

@@ -1,0 +1,15 @@
+pkgbase = omarchy-kids-control
+	pkgdesc = Omarchy Kids parent-side Control Center (core, GUI, status poll)
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/jfuerwentsches/omarchy-kids
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	checkdepends = gtest
+	makedepends = cmake
+	makedepends = ninja
+	depends = qt6-base
+	depends = tomlplusplus
+
+pkgname = omarchy-kids-control

@@ -14,7 +14,7 @@ toml = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = "0.31"
 libc = "0.2"
 shlex = "1"
 omarchy-kids-common = { path = "common" }
