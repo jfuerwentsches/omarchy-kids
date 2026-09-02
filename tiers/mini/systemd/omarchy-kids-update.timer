@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily trigger for the Omarchy Kids autonomous OS update (mini tier)
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

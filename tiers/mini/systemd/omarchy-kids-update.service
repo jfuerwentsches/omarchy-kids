@@ -1,0 +1,12 @@
+[Unit]
+Description=Omarchy Kids autonomous OS update (mini tier, issue #31)
+# This tier suppresses Omarchy's own child-facing update prompt entirely
+# (issue #30) -- without this unit nothing would ever update the machine.
+# Decided (issue #31): fully autonomous, no parent/Control-Center trigger.
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/omarchy-update -y
+# omarchy-update already creates a Snapper snapshot (omarchy-snapshot create)
+# before touching packages when snapshots are configured -- the rollback
+# safety net for a bad update already exists upstream, not reimplemented here.

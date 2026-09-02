@@ -150,6 +150,27 @@ if [[ $TIER == "mini" ]]; then
   sudo systemctl mask --now getty@tty2.service getty@tty3.service getty@tty4.service getty@tty5.service getty@tty6.service >/dev/null 2>&1 || true
 fi
 
+# Autonomous OS updates (issue #31): this tier suppresses Omarchy's own
+# child-facing update prompt entirely (issue #30), so without a replacement
+# this machine would never update at all. Decided: fully autonomous, no
+# parent/Control-Center trigger -- install + enable a system-level timer
+# that runs `omarchy-update -y` unattended on its own schedule.
+if [[ $TIER == "mini" && -d "$TIER_DIR/systemd" ]]; then
+  sudo install -Dm644 "$TIER_DIR/systemd/omarchy-kids-update.service" \
+    /etc/systemd/system/omarchy-kids-update.service
+  sudo install -Dm644 "$TIER_DIR/systemd/omarchy-kids-update.timer" \
+    /etc/systemd/system/omarchy-kids-update.timer
+  sudo systemctl enable --now omarchy-kids-update.timer >/dev/null 2>&1 || true
+
+  # Also silence Omarchy's per-login "pending migrations" toast, which opens
+  # a terminal on click: `omarchy-update -y` already runs the migration step
+  # itself, so this should never have anything to say under normal
+  # operation, but a failed/partial run could leave one pending -- and a
+  # kiosk child should never be offered an actionable terminal invitation
+  # either way.
+  systemctl --user mask omarchy-update-user-notify.service >/dev/null 2>&1 || true
+fi
+
 # Bar visibility: the kiosk Hyprland config above disables every default
 # binding, but never touched the Omarchy top bar itself — its own menu icon
 # (omarchy.menu) still opens the normal Omarchy menu (terminal, file
