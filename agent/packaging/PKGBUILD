@@ -7,7 +7,7 @@ arch=('x86_64' 'aarch64')
 url="https://github.com/jfuerwentsches/omarchy-kids"
 license=('MIT')
 depends=('polkit' 'sqlite' 'ufw' 'libnotify' 'openssh' 'sudo')
-makedepends=('cargo')
+makedepends=('cargo' 'pkgconf')
 optdepends=('gcompris-qt: mini tier default app'
             'blinken: mini tier default app'
             'tuxpaint: mini tier default app')
@@ -21,11 +21,17 @@ pkgver() {
 
 build() {
   cd "$startdir/.."
+
+  # In makepkg's Arch Rust environment, rusqlite's bundled libsqlite3 can be
+  # omitted from the final link (undefined sqlite3_* symbols). For the Arch
+  # package, link against Arch's sqlite package explicitly instead.
+  export LIBSQLITE3_SYS_USE_PKG_CONFIG=1
   cargo build --release --workspace
 }
 
 check() {
   cd "$startdir/.."
+  export LIBSQLITE3_SYS_USE_PKG_CONFIG=1
   cargo test --release --workspace
 }
 

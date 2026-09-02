@@ -115,13 +115,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install packaging tools
+        run: pacman -Sy --noconfirm --needed git namcap sudo
+
       - name: Prepare build user
         run: |
           useradd --create-home --shell /bin/bash builder
           chown -R builder:builder "$GITHUB_WORKSPACE"
-
-      - name: Install packaging tools
-        run: pacman -Sy --noconfirm --needed git namcap
+          printf 'builder ALL=(ALL:ALL) NOPASSWD: /usr/bin/pacman\n' > /etc/sudoers.d/ci-builder-pacman
+          chmod 0440 /etc/sudoers.d/ci-builder-pacman
 
       - name: Install package dependencies
         shell: bash
