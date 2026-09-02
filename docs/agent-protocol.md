@@ -302,6 +302,31 @@ selected again. Host-key verification is plain TOFU (`StrictHostKeyChecking
 already established. App-unlock and tier-switch controls, and any actual
 usage-stat charts, are still not built — this dashboard is read-only.
 
+## Update policy and failure story
+
+The update path is split by layer on purpose:
+
+- `omarchy-kids-*` packages ship as one versioned release train. The repo
+  does not support long-lived parent/child skew between `agent`, `control`,
+  `tiers`, `quickshell-plugin`, and `setup-wizard`; they move together.
+  This is the concrete answer to issue #49's compatibility question: a
+  mismatch is a rollout problem to fix, not a separate compatibility
+  matrix to maintain.
+- Mini-tier OS updates are autonomous on the child host. The child's own
+  update timer runs `omarchy-update -y` on a daily cadence, so the parent
+  does not have to click through every package refresh. That keeps the
+  kiosk usable without needing a reading child to understand update UI.
+- `omarchy-update` already snapshots via Snapper when snapshotting is
+  configured, so the immediate recovery path is a boot back to the
+  pre-update snapshot, followed by parent-visible notification/reporting.
+  We do not auto-rollback from this repo yet; manual rollback remains the
+  recovery policy until there is a reliable broken-boot detector.
+- A failed autonomous update should never disappear silently. Whether the
+  breakage is a failed update service run, a kiosk that no longer reaches
+  its graphical session, or `agentd` failing to come back after reboot,
+  the parent should learn about it through Control Center/dashboard
+  reporting and treat it as a maintenance event.
+
 ## End-to-end verification (issue #29, closed 2026-08-29)
 
 The real thing, not a stand-in: a fresh Omarchy VM, deferred-provisioning

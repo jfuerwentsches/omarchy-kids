@@ -17,4 +17,6 @@ Use `area:agent`, `area:control-center`, `area:tiers`, `area:quickshell-plugin`,
 
 ## Versioning
 
-The project ships one version tag across all components — agent and control center are always released together, so there's no cross-component compatibility matrix to track.
+The project ships one version tag across all components — agent, control center, tiers, quickshell plugin, and setup wizard are always released together, so there is no supported parent/child compatibility matrix to track.
+
+That means `omarchy-kids-*` package updates are intentionally synchronized: if one component moves, the rest move with it. If a deployed machine reports a version mismatch, treat it as a rollout/upgrade warning, not as a steady-state configuration to support long term.
