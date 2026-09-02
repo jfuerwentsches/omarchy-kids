@@ -115,6 +115,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare build user
+        run: |
+          useradd --create-home --shell /bin/bash builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
       - name: Install packaging tools
         run: pacman -Sy --noconfirm --needed git namcap
 
@@ -133,7 +138,7 @@ jobs:
             pkgdir="$(dirname "$pkgbuild")"
             echo "::group::${pkgbuild}"
             namcap "$pkgbuild"
-            (cd "$pkgdir" && makepkg --noconfirm --syncdeps --rmdeps --cleanbuild --clean --skipinteg)
+            su builder -s /bin/bash -c "cd '$GITHUB_WORKSPACE/$pkgdir' && makepkg --noconfirm --syncdeps --rmdeps --cleanbuild --clean --skipinteg"
             pacman -U --noconfirm "$pkgdir"/*.pkg.tar.zst
             echo "::endgroup::"
           done
@@ -150,7 +155,7 @@ jobs:
             quickshell-plugin/packaging/PKGBUILD
           do
             pkgdir="$(dirname "$pkgbuild")"
-            expected="$(cd "$pkgdir" && makepkg --printsrcinfo)"
+            expected="$(su builder -s /bin/bash -c "cd '$GITHUB_WORKSPACE/$pkgdir' && makepkg --printsrcinfo")"
             actual="$(cat "$pkgdir/.SRCINFO")"
             if [[ "$expected" != "$actual" ]]; then
               echo "::error file=$pkgdir/.SRCINFO::.SRCINFO is out of sync with $pkgbuild"
