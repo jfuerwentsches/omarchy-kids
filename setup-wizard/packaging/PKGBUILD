@@ -19,15 +19,15 @@ package() {
   cd "$startdir/.."
 
   install -d "$pkgdir/usr/lib/omarchy-kids/setup-wizard/lib"
-  install -Dm755 setup-wizard/bootstrap/omarchy-kids-bootstrap \
+  install -Dm755 bootstrap/omarchy-kids-bootstrap \
     "$pkgdir/usr/lib/omarchy-kids/setup-wizard/omarchy-kids-bootstrap"
-  install -Dm755 setup-wizard/first-boot/omarchy-kids-setup-wizard \
+  install -Dm755 first-boot/omarchy-kids-setup-wizard \
     "$pkgdir/usr/lib/omarchy-kids/setup-wizard/omarchy-kids-setup-wizard"
-  install -Dm755 setup-wizard/bootstrap/lib/account.sh \
+  install -Dm755 bootstrap/lib/account.sh \
     "$pkgdir/usr/lib/omarchy-kids/setup-wizard/lib/account.sh"
-  install -Dm755 setup-wizard/bootstrap/lib/branding-tier.sh \
+  install -Dm755 bootstrap/lib/branding-tier.sh \
     "$pkgdir/usr/lib/omarchy-kids/setup-wizard/lib/branding-tier.sh"
-  install -Dm755 setup-wizard/bootstrap/lib/ssh-key.sh \
+  install -Dm755 bootstrap/lib/ssh-key.sh \
     "$pkgdir/usr/lib/omarchy-kids/setup-wizard/lib/ssh-key.sh"
 
   install -d "$pkgdir/usr/bin"
@@ -36,7 +36,7 @@ package() {
   ln -s ../lib/omarchy-kids/setup-wizard/omarchy-kids-setup-wizard \
     "$pkgdir/usr/bin/omarchy-kids-setup-wizard"
 
-  install -Dm644 setup-wizard/first-boot/omarchy-kids-setup-wizard.service \
+  install -Dm644 first-boot/omarchy-kids-setup-wizard.service \
     "$pkgdir/usr/lib/systemd/system/omarchy-kids-setup-wizard.service"
 }
 
