@@ -71,24 +71,6 @@ grant_getty_lockdown_sudo() {
   rm -f "$tmp_file"
 }
 
-# grant_mini_packages_sudo <child_user>
-#
-# Tier application also runs as the unprivileged child account. Allow only
-# mini's fixed, idempotent GCompris install so the non-interactive bootstrap
-# can apply that tier without restoring broad package-management access.
-grant_mini_packages_sudo() {
-  local child_user="$1"
-  local sudoers_file=/etc/sudoers.d/zz-omarchy-kids-mini-packages
-  local tmp_file
-
-  tmp_file="$(mktemp)"
-  echo "$child_user ALL=(root) NOPASSWD: /usr/bin/pacman -S --needed --noconfirm gcompris-qt" > "$tmp_file"
-
-  visudo -c -f "$tmp_file" >/dev/null
-  install -m 440 "$tmp_file" "$sudoers_file"
-  rm -f "$tmp_file"
-}
-
 # generate_admin_password
 #
 # Phase 1 has no UI yet (see the vault note's phasing) — the parent-facing
