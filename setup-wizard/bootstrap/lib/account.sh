@@ -73,10 +73,10 @@ grant_getty_lockdown_sudo() {
 
 # generate_admin_password
 #
-# Phase 1 has no UI yet (see the vault note's phasing) — the parent-facing
-# form that will actually prompt for this interactively is issue #27. Until
-# then: accept an explicit --admin-password, or generate and print one once
-# so the script stays usable non-interactively in the dev VM.
+# Phase 1 kept a non-interactive fallback for direct bootstrap invocations
+# in the dev VM. The real first-boot form now prompts for this password
+# interactively, but the direct bootstrap path still accepts
+# --admin-password and can generate one when no caller provides it.
 generate_admin_password() {
   openssl rand -base64 18
 }
