@@ -123,7 +123,40 @@ jobs:
       - name: Install packaging tools
         run: pacman -Sy --noconfirm --needed git namcap
 
+      - name: Install package dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          install_pkgs=()
+          for pkgbuild in \
+            agent/packaging/PKGBUILD \
+            tiers/packaging/PKGBUILD \
+            control/packaging/PKGBUILD \
+            setup-wizard/packaging/PKGBUILD \
+            quickshell-plugin/packaging/PKGBUILD
+          do
+            # shellcheck disable=SC1090
+            source "$pkgbuild"
+            for dep in "${depends[@]-}" "${makedepends[@]-}" "${checkdepends[@]-}"; do
+              dep="${dep%%:*}"
+              dep="${dep%%|*}"
+              dep="${dep%%[<>=]*}"
+              case "$dep" in
+                cargo) dep=rust ;;
+                omarchy-kids-*) continue ;;
+              esac
+              if [[ -n "$dep" ]]; then
+                install_pkgs+=("$dep")
+              fi
+            done
+          done
+
+          mapfile -t install_pkgs < <(printf '%s\n' "${install_pkgs[@]}" | awk '!seen[$0]++')
+          pacman -Sy --noconfirm --needed "${install_pkgs[@]}"
+
       - name: Validate PKGBUILDs
+        shell: bash
         run: |
           set -euo pipefail
           export LANG=C.UTF-8
@@ -138,12 +171,13 @@ jobs:
             pkgdir="$(dirname "$pkgbuild")"
             echo "::group::${pkgbuild}"
             namcap "$pkgbuild"
-            su builder -s /bin/bash -c "cd '$GITHUB_WORKSPACE/$pkgdir' && makepkg --noconfirm --syncdeps --rmdeps --cleanbuild --clean --skipinteg"
+            su builder -s /bin/bash -c "cd '$GITHUB_WORKSPACE/$pkgdir' && makepkg --noconfirm --cleanbuild --clean --skipinteg"
             pacman -U --noconfirm "$pkgdir"/*.pkg.tar.zst
             echo "::endgroup::"
           done
 
       - name: Verify .SRCINFO files are in sync
+        shell: bash
         run: |
           set -euo pipefail
 

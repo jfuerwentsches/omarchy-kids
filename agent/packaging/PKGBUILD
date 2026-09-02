@@ -6,7 +6,7 @@ pkgdesc="Omarchy Kids session daemon + CLI: tiers, app unlocks, time budgets, us
 arch=('x86_64' 'aarch64')
 url="https://github.com/jfuerwentsches/omarchy-kids"
 license=('MIT')
-depends=('polkit' 'ufw' 'libnotify' 'openssh' 'sudo')
+depends=('polkit' 'sqlite' 'ufw' 'libnotify' 'openssh' 'sudo')
 makedepends=('cargo')
 optdepends=('gcompris-qt: mini tier default app'
             'blinken: mini tier default app'
