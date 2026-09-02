@@ -19,9 +19,9 @@ package() {
   cd "$startdir/.."
 
   install -d "$pkgdir/usr/lib/omarchy-kids/tiers"
-  install -Dm755 tiers/omarchy-kids-set-tier \
+  install -Dm755 omarchy-kids-set-tier \
     "$pkgdir/usr/lib/omarchy-kids/tiers/omarchy-kids-set-tier"
-  cp -a tiers/mini "$pkgdir/usr/lib/omarchy-kids/tiers/"
+  cp -a mini "$pkgdir/usr/lib/omarchy-kids/tiers/"
 
   install -d "$pkgdir/usr/bin"
   ln -s ../lib/omarchy-kids/tiers/omarchy-kids-set-tier \
