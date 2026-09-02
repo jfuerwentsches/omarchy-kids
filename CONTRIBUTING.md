@@ -9,6 +9,8 @@ This is a monorepo covering a few different tech stacks. Pick the folder for the
 | `tiers/`, `setup-wizard/` | shell | no build step |
 | `quickshell-plugin/` | QML | loaded by Quickshell directly |
 
+Packaging notes live in [`docs/packaging.md`](docs/packaging.md).
+
 ## Issues
 
 Use `area:agent`, `area:control-center`, `area:tiers`, `area:quickshell-plugin`, `area:setup-wizard` labels so things stay navigable despite the single repo.

@@ -1,0 +1,53 @@
+# Maintainer: Omarchy Kids
+pkgname=omarchy-kids-setup-wizard
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Omarchy Kids setup wizard and bootstrap scripts"
+arch=('any')
+url="https://github.com/jfuerwentsches/omarchy-kids"
+license=('MIT')
+depends=('bash' 'gum' 'jq' 'sudo' 'omarchy-kids-tiers' 'omarchy-kids-agent')
+source=()
+sha256sums=()
+
+pkgver() {
+  cd "$startdir/.."
+  echo "$pkgver"
+}
+
+package() {
+  cd "$startdir/.."
+
+  install -d "$pkgdir/usr/lib/omarchy-kids/setup-wizard/lib"
+  install -Dm755 setup-wizard/bootstrap/omarchy-kids-bootstrap \
+    "$pkgdir/usr/lib/omarchy-kids/setup-wizard/omarchy-kids-bootstrap"
+  install -Dm755 setup-wizard/first-boot/omarchy-kids-setup-wizard \
+    "$pkgdir/usr/lib/omarchy-kids/setup-wizard/omarchy-kids-setup-wizard"
+  install -Dm755 setup-wizard/bootstrap/lib/account.sh \
+    "$pkgdir/usr/lib/omarchy-kids/setup-wizard/lib/account.sh"
+  install -Dm755 setup-wizard/bootstrap/lib/branding-tier.sh \
+    "$pkgdir/usr/lib/omarchy-kids/setup-wizard/lib/branding-tier.sh"
+  install -Dm755 setup-wizard/bootstrap/lib/ssh-key.sh \
+    "$pkgdir/usr/lib/omarchy-kids/setup-wizard/lib/ssh-key.sh"
+
+  install -d "$pkgdir/usr/bin"
+  ln -s ../lib/omarchy-kids/setup-wizard/omarchy-kids-bootstrap \
+    "$pkgdir/usr/bin/omarchy-kids-bootstrap"
+  ln -s ../lib/omarchy-kids/setup-wizard/omarchy-kids-setup-wizard \
+    "$pkgdir/usr/bin/omarchy-kids-setup-wizard"
+
+  install -Dm644 setup-wizard/first-boot/omarchy-kids-setup-wizard.service \
+    "$pkgdir/usr/lib/systemd/system/omarchy-kids-setup-wizard.service"
+}
+
+post_install() {
+  systemctl enable omarchy-kids-setup-wizard.service || true
+}
+
+post_upgrade() {
+  post_install
+}
+
+post_remove() {
+  systemctl disable omarchy-kids-setup-wizard.service || true
+}

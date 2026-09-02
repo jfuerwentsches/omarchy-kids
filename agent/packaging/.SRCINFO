@@ -1,0 +1,19 @@
+pkgbase = omarchy-kids-agent
+	pkgdesc = Omarchy Kids session daemon + CLI: tiers, app unlocks, time budgets, usage log (issue #14)
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/jfuerwentsches/omarchy-kids
+	arch = x86_64
+	arch = aarch64
+	license = MIT
+	optdepends = gcompris-qt: mini tier default app
+	optdepends = blinken: mini tier default app
+	optdepends = tuxpaint: mini tier default app
+	depends = polkit
+	depends = ufw
+	depends = libnotify
+	depends = openssh
+	depends = sudo
+	makedepends = cargo
+
+pkgname = omarchy-kids-agent

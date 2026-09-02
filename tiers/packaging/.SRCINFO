@@ -1,0 +1,14 @@
+pkgbase = omarchy-kids-tiers
+	pkgdesc = Omarchy Kids tier configuration layer (mini tier)
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/jfuerwentsches/omarchy-kids
+	arch = any
+	license = MIT
+	depends = bash
+	depends = gcompris-qt
+	depends = jq
+	depends = procps-ng
+	depends = sudo
+
+pkgname = omarchy-kids-tiers
