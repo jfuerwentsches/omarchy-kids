@@ -360,9 +360,9 @@ is solid. Don't start scaffolding other tiers unless asked.
   Both snapshots verified for real on the same VM (VT lockdown actually
   `masked`, not just `disabled`; kiosk launcher plugin present; Hyprland's
   `SUPER + SPACE` kiosk binding confirmed in place).
-- Not yet done: app installation as part of the package (nothing in the
-  current line-up is installed by the package yet), the `omarkid-gcompris`
-  fork itself, app-wrapper/time-tracking integration, locale implementation
+- Tier mini now installs upstream `gcompris-qt` when applied; not yet done:
+  KTuberling installation, the `omarkid-gcompris` fork itself,
+  app-wrapper/time-tracking integration, locale implementation
   (concept is written, not built — a maintainer note from 2026-08-29 also
   flags that the setup wizard's language prompt should move to *first*,
   once i18n is actually built, so later prompts render in it).

@@ -1,0 +1,29 @@
+# Maintainer: Omarchy Kids
+pkgname=omarchy-kids-tiers
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Omarchy Kids tier configuration layer (mini tier)"
+arch=('any')
+url="https://github.com/jfuerwentsches/omarchy-kids"
+license=('MIT')
+depends=('bash' 'gcompris-qt' 'jq' 'procps-ng' 'sudo')
+source=()
+sha256sums=()
+
+pkgver() {
+  cd "$startdir/.."
+  echo "$pkgver"
+}
+
+package() {
+  cd "$startdir/.."
+
+  install -d "$pkgdir/usr/lib/omarchy-kids/tiers"
+  install -Dm755 omarchy-kids-set-tier \
+    "$pkgdir/usr/lib/omarchy-kids/tiers/omarchy-kids-set-tier"
+  cp -a mini "$pkgdir/usr/lib/omarchy-kids/tiers/"
+
+  install -d "$pkgdir/usr/bin"
+  ln -s ../lib/omarchy-kids/tiers/omarchy-kids-set-tier \
+    "$pkgdir/usr/bin/omarchy-kids-set-tier"
+}
