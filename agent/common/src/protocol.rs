@@ -45,6 +45,16 @@ pub enum Request {
     Report {
         week: bool,
     },
+    /// Sent by `omarchy-kids-run` **before** it execs anything (issue #35):
+    /// answered with `AllowedPayload`, using the same allow/budget/window
+    /// checks as `WrapperPoll`. `omarchy-kids-run` fails closed (refuses to
+    /// launch) both when this comes back `allowed: false` and when agentd is
+    /// unreachable at all — unlike `WrapperStart`/`WrapperStop`/`WrapperPoll`
+    /// below, which stay fail-open (agentd being briefly down shouldn't kill
+    /// an already-running, already-authorized session).
+    WrapperAuthorize {
+        app: String,
+    },
     /// Sent by `omarchy-kids-run` right after it execs the real app.
     WrapperStart {
         app: String,

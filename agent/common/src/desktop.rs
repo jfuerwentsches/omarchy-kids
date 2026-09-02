@@ -7,16 +7,40 @@ pub struct DesktopEntry {
     pub exec: String,
 }
 
+/// Desktop ids are conventionally reverse-DNS-style dotted identifiers
+/// (`org.kde.gcompris`) or a single dash/underscore-separated token
+/// (`tuxpaint-fullscreen`) — reject anything that could escape the intended
+/// `<dir>/<id>.desktop` join (path separators, `.`/`..` components, NUL/
+/// control characters) before it ever reaches a filesystem lookup (see
+/// issue #38). Every caller that accepts a desktop id from outside this
+/// process (wrapper CLI args, agentd request payloads) must call this first.
+pub fn is_valid_desktop_id(desktop_id: &str) -> bool {
+    if desktop_id.is_empty() || desktop_id == "." || desktop_id == ".." {
+        return false;
+    }
+    desktop_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
 /// Standard XDG application dirs, most-specific first — matches what
 /// `gtk-launch`/desktop-file lookups already use, so a desktop id that shows
 /// up in the launcher resolves the same way here.
+///
+/// Kiosk-launch resolution deliberately does **not** consult
+/// `~/.local/share/applications` (issue #35): that directory is
+/// child-writable, and nothing in the current tier line-ups needs a
+/// user-installed desktop entry — only the system-wide, root-installed
+/// directories are trusted for resolving what a launch/unlock/tier-switch
+/// request is allowed to point at.
 pub fn find_desktop_file(desktop_id: &str) -> Option<PathBuf> {
-    let mut dirs = Vec::new();
-    if let Some(home) = std::env::var_os("HOME") {
-        dirs.push(PathBuf::from(home).join(".local/share/applications"));
+    if !is_valid_desktop_id(desktop_id) {
+        return None;
     }
-    dirs.push(PathBuf::from("/usr/local/share/applications"));
-    dirs.push(PathBuf::from("/usr/share/applications"));
+    let dirs = [
+        PathBuf::from("/usr/local/share/applications"),
+        PathBuf::from("/usr/share/applications"),
+    ];
 
     dirs.into_iter()
         .map(|dir| dir.join(format!("{desktop_id}.desktop")))
@@ -142,5 +166,29 @@ mod tests {
             exec_to_argv(r#"app "--title=Hello World""#),
             vec!["app", "--title=Hello World"]
         );
+    }
+
+    #[test]
+    fn valid_desktop_ids() {
+        assert!(is_valid_desktop_id("org.kde.gcompris"));
+        assert!(is_valid_desktop_id("tuxpaint-fullscreen"));
+        assert!(is_valid_desktop_id("some_app.v2"));
+    }
+
+    #[test]
+    fn rejects_path_traversal_and_control_chars() {
+        assert!(!is_valid_desktop_id(""));
+        assert!(!is_valid_desktop_id("."));
+        assert!(!is_valid_desktop_id(".."));
+        assert!(!is_valid_desktop_id("../../etc/passwd"));
+        assert!(!is_valid_desktop_id("foo/bar"));
+        assert!(!is_valid_desktop_id("foo\0bar"));
+        assert!(!is_valid_desktop_id("foo\nbar"));
+        assert!(!is_valid_desktop_id("foo bar"));
+    }
+
+    #[test]
+    fn find_desktop_file_rejects_invalid_id_before_lookup() {
+        assert_eq!(find_desktop_file("../../etc/passwd"), None);
     }
 }

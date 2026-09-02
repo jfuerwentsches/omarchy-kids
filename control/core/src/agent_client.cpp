@@ -6,11 +6,60 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <cstdio>
+#include <fstream>
 #include <thread>
 
 namespace omarchy_kids::control {
 
 namespace {
+
+// Fixed, non-secret alias used as the "hostname" field of the pinned
+// known_hosts entry (issue #33) — paired with `-o HostKeyAlias=`, ssh
+// matches the known_hosts line against this alias instead of the real
+// hostname/port, so there's no need to reproduce OpenSSH's `[host]:port`
+// bracket convention for non-default ports here.
+constexpr const char* kHostKeyAlias = "omarchy-kids-child";
+
+// Writes a private, process-local known_hosts file pinning `host`'s real
+// sshd host key (captured through the SPAKE2-authenticated pairing
+// exchange — see agent/pairing/src/proto.rs's `Confirm::ssh_host_public_key`)
+// so the first real SSH connection can be checked against it instead of
+// trusting whatever key happens to answer (`StrictHostKeyChecking=
+// accept-new` TOFU). Returns an empty path (and leaves the caller to fall
+// back to TOFU) for a host paired before this field existed.
+class PinnedKnownHosts {
+public:
+    explicit PinnedKnownHosts(const HostEntry& host) {
+        if (host.sshHostPublicKey.empty()) {
+            return;
+        }
+        char tmpl[] = "/tmp/omarchy-kids-control-known-hosts-XXXXXX";
+        int fd = mkstemp(tmpl);
+        if (fd < 0) {
+            return;
+        }
+        close(fd);
+        path_ = tmpl;
+        std::ofstream out(path_, std::ios::trunc);
+        out << kHostKeyAlias << " " << host.sshHostPublicKey << "\n";
+    }
+
+    ~PinnedKnownHosts() {
+        if (!path_.empty()) {
+            std::remove(path_.c_str());
+        }
+    }
+
+    PinnedKnownHosts(const PinnedKnownHosts&) = delete;
+    PinnedKnownHosts& operator=(const PinnedKnownHosts&) = delete;
+
+    bool valid() const { return !path_.empty(); }
+    const std::string& path() const { return path_; }
+
+private:
+    std::string path_;
+};
 
 // fork/exec + pipe instead of popen()/system(): those go through a shell,
 // and the values we're passing (hostname, key path) aren't trusted shell
@@ -104,13 +153,34 @@ AgentCommandResult AgentClient::run(
     const HostEntry& host,
     const std::vector<std::string>& agentArgs,
     std::chrono::seconds timeout) {
+    PinnedKnownHosts pinned(host);
+
     std::vector<std::string> argv = {
         "ssh",
         "-i", host.keyPath,
         "-p", std::to_string(host.sshPort),
         "-o", "BatchMode=yes",
         "-o", "ConnectTimeout=5",
-        "-o", "StrictHostKeyChecking=accept-new",
+    };
+    if (pinned.valid()) {
+        // The host key came through the SPAKE2-authenticated pairing
+        // exchange (issue #33) — check the real connection against exactly
+        // that key instead of TOFU, and don't fall back to the system-wide
+        // known_hosts file (GlobalKnownHostsFile=/dev/null) so only the
+        // pinned key is ever trusted for this call.
+        argv.insert(argv.end(), {
+            "-o", "StrictHostKeyChecking=yes",
+            "-o", "UserKnownHostsFile=" + pinned.path(),
+            "-o", "GlobalKnownHostsFile=/dev/null",
+            "-o", std::string("HostKeyAlias=") + kHostKeyAlias,
+        });
+    } else {
+        // Host paired before issue #33's fix — no pinned key on record.
+        // Falls back to the old TOFU behavior rather than refusing to talk
+        // to an already-paired child; re-pairing picks up a pinned key.
+        argv.insert(argv.end(), {"-o", "StrictHostKeyChecking=accept-new"});
+    }
+    argv.insert(argv.end(), {
         // Must be user@host, not just host: ssh otherwise defaults to
         // whichever local account Control Center itself runs as, which
         // essentially never matches the child account the key lives under
@@ -119,7 +189,7 @@ AgentCommandResult AgentClient::run(
         // before, since `username` didn't even exist on HostEntry until
         // that same test surfaced the gap in the pairing protocol itself).
         host.username + "@" + host.hostname,
-    };
+    });
     argv.insert(argv.end(), agentArgs.begin(), agentArgs.end());
     return runCaptured(argv, timeout);
 }

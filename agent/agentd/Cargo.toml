@@ -12,6 +12,10 @@ path = "src/main.rs"
 omarchy-kids-common.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 chrono.workspace = true
 anyhow.workspace = true
 rusqlite.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
