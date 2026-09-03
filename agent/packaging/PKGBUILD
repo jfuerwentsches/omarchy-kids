@@ -9,8 +9,7 @@ license=('MIT')
 depends=('polkit' 'sqlite' 'ufw' 'libnotify' 'openssh' 'sudo')
 makedepends=('cargo' 'pkgconf')
 optdepends=('gcompris-qt: mini tier default app'
-            'blinken: mini tier default app'
-            'tuxpaint: mini tier default app')
+            'ktuberling: mini tier default app')
 source=()
 sha256sums=()
 
