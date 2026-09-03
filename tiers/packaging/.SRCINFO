@@ -7,6 +7,7 @@ pkgbase = omarchy-kids-tiers
 	license = MIT
 	depends = bash
 	depends = gcompris-qt
+	depends = ktuberling
 	depends = jq
 	depends = procps-ng
 	depends = sudo

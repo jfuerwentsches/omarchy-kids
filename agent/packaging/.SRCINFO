@@ -15,7 +15,6 @@ pkgbase = omarchy-kids-agent
 	depends = openssh
 	depends = sudo
 	optdepends = gcompris-qt: mini tier default app
-	optdepends = blinken: mini tier default app
-	optdepends = tuxpaint: mini tier default app
+	optdepends = ktuberling: mini tier default app
 
 pkgname = omarchy-kids-agent
